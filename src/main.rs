@@ -87,8 +87,24 @@ enum Commands {
         state: Option<String>,
     },
 
+    /// Read or write arbitrary metadata on a node (JSON blob)
+    Meta {
+        id: String,
+        /// JSON value to set. Omit to read current metadata.
+        value: Option<String>,
+    },
+
     /// Print the agent guide (pipe to AGENT.md or include in system prompt)
     Agent,
+
+    /// Show recent events (audit log)
+    Log {
+        #[arg(long, default_value = "20")]
+        limit: usize,
+    },
+
+    /// Show registered agents and their last-seen time
+    Agents,
 }
 
 fn main() {
@@ -121,7 +137,22 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Discover { a, b } => cmd_edge(a, b, EdgeType::DiscoveredFrom, false, cli.json),
         Commands::List { state } => cmd_list(state, cli.json),
         Commands::Agent => { print!("{}", AGENT_GUIDE); Ok(()) },
+        Commands::Meta { id, value } => cmd_meta(id, value, cli.json),
+        Commands::Log { limit } => cmd_log(limit, cli.json),
+        Commands::Agents => cmd_agents(cli.json),
     }
+}
+
+// ── event helper ─────────────────────────────────────────────────────────────
+
+fn emit(root: &std::path::Path, action: &str, node_id: &str, part: Option<&str>, detail: Option<&str>) {
+    let _ = store::append_event(root, store::Event {
+        ts: chrono::Utc::now().to_rfc3339(),
+        action,
+        node_id,
+        part,
+        detail,
+    });
 }
 
 // ── agent guide ──────────────────────────────────────────────────────────────
@@ -209,6 +240,7 @@ fn cmd_add(title: String, json: bool) -> Result<()> {
     let node = model::Node::new(new_id.clone(), title.clone());
     graph.nodes.push(node);
     store::save(&root, &graph)?;
+    emit(&root, "create", &new_id, None, Some(&title));
 
     if json {
         println!("{}", serde_json::json!({ "id": new_id, "title": title }));
@@ -228,6 +260,7 @@ fn cmd_new(parent_partial: String, title: String, json: bool) -> Result<()> {
     let node = model::Node::new(new_id.clone(), title.clone());
     graph.nodes.push(node);
     store::save(&root, &graph)?;
+    emit(&root, "create", &new_id, None, Some(&title));
 
     if json {
         println!(
@@ -279,6 +312,7 @@ fn cmd_surface(id: Option<String>, json: bool) -> Result<()> {
             node.state = State::Ready;
             node.touch();
             store::save(&root, &graph)?;
+            emit(&root, "surface", &resolved, None, None);
 
             if json {
                 println!("{}", serde_json::json!({ "id": resolved, "state": "ready" }));
@@ -320,6 +354,8 @@ fn cmd_claim(partial: String, as_part: Option<String>, json: bool) -> Result<()>
     node.part = Some(part.clone());
     node.touch();
     store::save(&root, &graph)?;
+    store::upsert_agent(&root, &part).ok();
+    emit(&root, "claim", &resolved, Some(&part), None);
 
     if json {
         println!("{}", serde_json::json!({ "id": resolved, "state": "claimed", "part": part }));
@@ -346,6 +382,7 @@ fn cmd_unclaim(partial: String, json: bool) -> Result<()> {
     node.part = None;
     node.touch();
     store::save(&root, &graph)?;
+    emit(&root, "unclaim", &resolved, None, None);
 
     if json {
         println!("{}", serde_json::json!({ "id": resolved, "state": "ready" }));
@@ -386,8 +423,10 @@ fn cmd_integrate(partial: String, json: bool) -> Result<()> {
         node.touch();
     }
 
+    store::migrate_archive_if_needed(&root).ok();
     store::archive_node(&root, &mut graph, &resolved)?;
     store::save(&root, &graph)?;
+    emit(&root, "integrate", &resolved, None, None);
 
     if json {
         println!("{}", serde_json::json!({ "id": resolved, "state": "integrated" }));
@@ -435,6 +474,7 @@ fn cmd_shadow(id: Option<String>, json: bool) -> Result<()> {
             node.shadowed = true;
             node.touch();
             store::save(&root, &graph)?;
+            emit(&root, "shadow", &resolved, None, None);
 
             if json {
                 println!("{}", serde_json::json!({ "id": resolved, "shadowed": true }));
@@ -457,6 +497,7 @@ fn cmd_unshadow(partial: String, json: bool) -> Result<()> {
     node.shadowed = false;
     node.touch();
     store::save(&root, &graph)?;
+    emit(&root, "unshadow", &resolved, None, None);
 
     if json {
         println!("{}", serde_json::json!({ "id": resolved, "shadowed": false }));
@@ -538,6 +579,9 @@ fn cmd_show(partial: String, json: bool) -> Result<()> {
                     .collect::<Vec<_>>()
                     .join(", ")
             );
+        }
+        if let Some(meta) = &node.meta {
+            println!("meta:     {}", serde_json::to_string(meta)?);
         }
         if let Some(body) = &node.body {
             println!("\n{}", body);
@@ -772,6 +816,92 @@ fn cmd_list(state_filter: Option<String>, json: bool) -> Result<()> {
             let shadow = if n.shadowed { " [shadowed]" } else { "" };
             let part = n.part.as_deref().unwrap_or("—");
             println!("{:<20}  {:<40}  {:<12}  {}{}", n.id, n.title, n.state, part, shadow);
+        }
+    }
+    Ok(())
+}
+
+// ── log ───────────────────────────────────────────────────────────────────────
+
+fn cmd_log(limit: usize, json: bool) -> Result<()> {
+    let root = store::find_root()?;
+    let events = store::recent_events(&root, limit)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&events)?);
+    } else if events.is_empty() {
+        println!("no events");
+    } else {
+        for e in &events {
+            let ts = e["ts"].as_str().unwrap_or("?");
+            let action = e["action"].as_str().unwrap_or("?");
+            let node_id = e["node_id"].as_str().unwrap_or("?");
+            let part = e["part"].as_str().unwrap_or("");
+            let detail = e["detail"].as_str().unwrap_or("");
+            let extra = match (part, detail) {
+                ("", "") => String::new(),
+                (p, "") => format!("  {}", p),
+                ("", d) => format!("  {}", d),
+                (p, d) => format!("  {}  {}", p, d),
+            };
+            // Show only date+time, not full RFC3339
+            let ts_short = &ts[..19].replace('T', " ");
+            println!("{}  {:<12}  {}{}", ts_short, action, node_id, extra);
+        }
+    }
+    Ok(())
+}
+
+// ── agents ────────────────────────────────────────────────────────────────────
+
+fn cmd_agents(json: bool) -> Result<()> {
+    let root = store::find_root()?;
+    let agents = store::load_agents(&root)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&agents)?);
+    } else if agents.is_empty() {
+        println!("no agents registered");
+    } else {
+        for a in &agents {
+            let ts_short = &a.last_seen[..19].replace('T', " ");
+            println!("{:<30}  last seen {}", a.name, ts_short);
+        }
+    }
+    Ok(())
+}
+
+// ── meta ──────────────────────────────────────────────────────────────────────
+
+fn cmd_meta(partial: String, value: Option<String>, json: bool) -> Result<()> {
+    let root = store::find_root()?;
+
+    match value {
+        None => {
+            let graph = store::load(&root)?;
+            let resolved = id::resolve(&graph, &partial)?;
+            let node = graph
+                .get_node(&resolved)
+                .ok_or_else(|| anyhow::anyhow!("node not found: {}", resolved))?;
+            let meta = node.meta.as_ref().unwrap_or(&serde_json::Value::Null);
+            println!("{}", serde_json::to_string_pretty(meta)?);
+        }
+        Some(raw) => {
+            let parsed: serde_json::Value = serde_json::from_str(&raw)
+                .map_err(|e| anyhow::anyhow!("invalid JSON: {}", e))?;
+            let mut graph = store::load(&root)?;
+            let resolved = id::resolve(&graph, &partial)?;
+            let node = graph
+                .get_node_mut(&resolved)
+                .ok_or_else(|| anyhow::anyhow!("node not found: {}", resolved))?;
+            node.meta = Some(parsed.clone());
+            node.touch();
+            store::save(&root, &graph)?;
+            if json {
+                println!("{}", serde_json::json!({ "id": resolved, "meta": parsed }));
+            } else {
+                println!("meta set  {}", resolved);
+            }
         }
     }
     Ok(())

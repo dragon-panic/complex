@@ -53,10 +53,13 @@ fn graph_json(dir: &TempDir) -> serde_json::Value {
     serde_json::from_str(&raw).unwrap()
 }
 
-fn archive_json(dir: &TempDir) -> serde_json::Value {
+fn archive_entries(dir: &TempDir) -> Vec<serde_json::Value> {
     let raw =
-        std::fs::read_to_string(dir.path().join(".complex/archive/archive.json")).unwrap();
-    serde_json::from_str(&raw).unwrap()
+        std::fs::read_to_string(dir.path().join(".complex/archive/archive.jsonl")).unwrap();
+    raw.lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect()
 }
 
 // ── cx init ───────────────────────────────────────────────────────────────────
@@ -315,11 +318,10 @@ fn integrate_moves_to_archive() {
     assert!(g["nodes"].as_array().unwrap().is_empty());
 
     // node in archive
-    let archived = archive_json(&dir);
-    let arr = archived.as_array().unwrap();
-    assert_eq!(arr.len(), 1);
-    assert_eq!(arr[0]["id"], id.as_str());
-    assert_eq!(arr[0]["state"], "integrated");
+    let entries = archive_entries(&dir);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["id"], id.as_str());
+    assert_eq!(entries[0]["state"], "integrated");
 }
 
 #[test]

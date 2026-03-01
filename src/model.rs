@@ -54,6 +54,10 @@ pub struct Node {
     pub part: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Arbitrary JSON for orchestrators, agents, and workflow engines.
+    /// complex stores it and ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
     #[serde(skip)]
     pub body: Option<String>,
 }
@@ -69,6 +73,7 @@ impl Node {
             part: None,
             created_at: now,
             updated_at: now,
+            meta: None,
             body: None,
         }
     }
