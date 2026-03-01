@@ -112,5 +112,8 @@ pub fn archive_node(root: &Path, graph: &mut Graph, id: &str) -> Result<()> {
     archived.push(node);
     fs::write(archive_path, serde_json::to_string_pretty(&archived)?)?;
 
+    // Remove edges that reference the archived node
+    graph.edges.retain(|e| e.from != id && e.to != id);
+
     Ok(())
 }

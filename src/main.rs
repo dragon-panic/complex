@@ -284,6 +284,22 @@ fn cmd_integrate(partial: String, json: bool) -> Result<()> {
     let mut graph = store::load(&root)?;
     let resolved = id::resolve(&graph, &partial)?;
 
+    // Warn if active children exist
+    let active_children: Vec<&str> = graph
+        .children(&resolved)
+        .into_iter()
+        .filter(|n| n.state != State::Integrated)
+        .map(|n| n.id.as_str())
+        .collect();
+    if !active_children.is_empty() {
+        eprintln!(
+            "warning: {} has {} active child(ren): {}",
+            resolved,
+            active_children.len(),
+            active_children.join(", ")
+        );
+    }
+
     {
         let node = graph
             .get_node_mut(&resolved)
