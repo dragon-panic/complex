@@ -11,15 +11,6 @@
       "updated_at": "2026-03-01T00:09:52.638463176Z"
     },
     {
-      "id": "JMpv.4cmQ",
-      "title": "cargo install + release build",
-      "state": "ready",
-      "shadowed": false,
-      "part": null,
-      "created_at": "2026-03-01T00:09:52.664049837Z",
-      "updated_at": "2026-03-01T15:28:59.499997558Z"
-    },
-    {
       "id": "ISqr",
       "title": "metadata, events, agents — composability layer",
       "state": "latent",

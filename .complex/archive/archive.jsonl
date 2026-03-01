@@ -11,3 +11,4 @@
 {"id":"ISqr.G1rZ","title":"Archive: switch to JSONL + monthly rotation with line cap","state":"integrated","shadowed":false,"part":"claude","created_at":"2026-03-01T16:40:40.158449148Z","updated_at":"2026-03-01T16:47:19.709079845Z"}
 {"id":"ISqr.R6Dc","title":"Agent registry: agents.json + cx agents command","state":"integrated","shadowed":false,"part":"claude","created_at":"2026-03-01T16:40:40.161666302Z","updated_at":"2026-03-01T16:47:19.710782093Z"}
 {"id":"ISqr.x4CO","title":"Events log: append events.jsonl + cx log command","state":"integrated","shadowed":false,"part":"claude","created_at":"2026-03-01T16:40:40.160039445Z","updated_at":"2026-03-01T16:47:38.047678082Z"}
+{"id":"JMpv.4cmQ","title":"cargo install + release build","state":"integrated","shadowed":false,"part":"claude","created_at":"2026-03-01T00:09:52.664049837Z","updated_at":"2026-03-01T16:51:15.446690170Z"}
