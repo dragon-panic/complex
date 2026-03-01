@@ -55,6 +55,23 @@ Short IDs (leaf segment) work when unambiguous:  cx claim bX7c
 
   CX_PART   your identity — set this before claiming anything
 
+## Rationale (--reason)
+
+All mutation commands accept an optional `--reason` flag to record **why** you
+are taking an action. The reason is stored in `events.jsonl` (audit trail) and
+in the node's `meta._reason` field (quick lookup for orchestrators).
+
+```
+cx claim <id> --as agent-1 --reason "has rust capability, no blockers"
+cx shadow <id> --reason "tests failing, needs upstream fix in auth module"
+cx unclaim <id> --reason "blocked on external API, releasing for others"
+cx integrate <id> --reason "all tests pass, code reviewed"
+cx surface <id> --reason "dependency resolved, ready for work"
+cx unshadow <id> --reason "upstream fix landed"
+```
+
+Reason is always optional — omitting it never blocks an action.
+
 ## What to commit
 
 After any cx mutation, stage and commit `.complex/`:

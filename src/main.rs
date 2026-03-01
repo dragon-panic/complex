@@ -33,26 +33,54 @@ enum Commands {
     },
 
     /// List ready nodes, or promote a latent node to ready
-    Surface { id: Option<String> },
+    Surface {
+        id: Option<String>,
+        /// Why this node is being surfaced
+        #[arg(long)]
+        reason: Option<String>,
+    },
 
     /// Claim a node for a part (agent)
     Claim {
         id: String,
         #[arg(long, value_name = "PART")]
         r#as: Option<String>,
+        /// Why you are claiming this task
+        #[arg(long)]
+        reason: Option<String>,
     },
 
     /// Release a claim, returning the node to ready
-    Unclaim { id: String },
+    Unclaim {
+        id: String,
+        /// Why you are releasing this claim
+        #[arg(long)]
+        reason: Option<String>,
+    },
 
     /// Mark a node as integrated (done) and move it to archive
-    Integrate { id: String },
+    Integrate {
+        id: String,
+        /// Outcome or rationale for integration
+        #[arg(long)]
+        reason: Option<String>,
+    },
 
     /// List shadowed nodes, or flag a node as shadowed
-    Shadow { id: Option<String> },
+    Shadow {
+        id: Option<String>,
+        /// Why this node is being shadowed
+        #[arg(long)]
+        reason: Option<String>,
+    },
 
     /// Clear the shadow flag from a node
-    Unshadow { id: String },
+    Unshadow {
+        id: String,
+        /// Why this node is being unshadowed
+        #[arg(long)]
+        reason: Option<String>,
+    },
 
     /// Show node detail
     Show { id: String },
@@ -120,12 +148,12 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Init => cmd_init(),
         Commands::Add { title } => cmd_add(title.join(" "), cli.json),
         Commands::New { parent_id, title } => cmd_new(parent_id, title.join(" "), cli.json),
-        Commands::Surface { id } => cmd_surface(id, cli.json),
-        Commands::Claim { id, r#as } => cmd_claim(id, r#as, cli.json),
-        Commands::Unclaim { id } => cmd_unclaim(id, cli.json),
-        Commands::Integrate { id } => cmd_integrate(id, cli.json),
-        Commands::Shadow { id } => cmd_shadow(id, cli.json),
-        Commands::Unshadow { id } => cmd_unshadow(id, cli.json),
+        Commands::Surface { id, reason } => cmd_surface(id, reason, cli.json),
+        Commands::Claim { id, r#as, reason } => cmd_claim(id, r#as, reason, cli.json),
+        Commands::Unclaim { id, reason } => cmd_unclaim(id, reason, cli.json),
+        Commands::Integrate { id, reason } => cmd_integrate(id, reason, cli.json),
+        Commands::Shadow { id, reason } => cmd_shadow(id, reason, cli.json),
+        Commands::Unshadow { id, reason } => cmd_unshadow(id, reason, cli.json),
         Commands::Show { id } => cmd_show(id, cli.json),
         Commands::Tree { id } => cmd_tree(id, cli.json),
         Commands::Parts => cmd_parts(cli.json),
@@ -145,14 +173,23 @@ fn run(cli: Cli) -> Result<()> {
 
 // ── event helper ─────────────────────────────────────────────────────────────
 
-fn emit(root: &std::path::Path, action: &str, node_id: &str, part: Option<&str>, detail: Option<&str>) {
+fn emit(root: &std::path::Path, action: &str, node_id: &str, part: Option<&str>, detail: Option<&str>, reason: Option<&str>) {
     let _ = store::append_event(root, store::Event {
         ts: chrono::Utc::now().to_rfc3339(),
         action,
         node_id,
         part,
         detail,
+        reason,
     });
+}
+
+/// Merge `{"_reason": reason}` into a node's existing meta (or create it).
+fn set_reason(node: &mut model::Node, reason: &str) {
+    let meta = node.meta.get_or_insert_with(|| serde_json::json!({}));
+    if let Some(obj) = meta.as_object_mut() {
+        obj.insert("_reason".to_string(), serde_json::json!(reason));
+    }
 }
 
 // ── agent guide ──────────────────────────────────────────────────────────────
@@ -192,6 +229,23 @@ cx parts --json                   what each part currently holds
 cx therapy --json                 stale (claimed >24h) and shadowed nodes
 cx list --state claimed --json    all nodes in a given state
 ```
+
+## Rationale (--reason)
+
+All mutation commands accept an optional `--reason` flag to record **why** you
+are taking an action. The reason is stored in `events.jsonl` (audit trail) and
+in the node's `meta._reason` field (quick lookup for orchestrators).
+
+```
+cx claim <id> --as agent-1 --reason "has rust capability, no blockers"
+cx shadow <id> --reason "tests failing, needs upstream fix in auth module"
+cx unclaim <id> --reason "blocked on external API, releasing for others"
+cx integrate <id> --reason "all tests pass, code reviewed"
+cx surface <id> --reason "dependency resolved, ready for work"
+cx unshadow <id> --reason "upstream fix landed"
+```
+
+Reason is always optional — omitting it never blocks an action.
 
 ## State model
 
@@ -240,7 +294,7 @@ fn cmd_add(title: String, json: bool) -> Result<()> {
     let node = model::Node::new(new_id.clone(), title.clone());
     graph.nodes.push(node);
     store::save(&root, &graph)?;
-    emit(&root, "create", &new_id, None, Some(&title));
+    emit(&root, "create", &new_id, None, Some(&title), None);
 
     if json {
         println!("{}", serde_json::json!({ "id": new_id, "title": title }));
@@ -260,7 +314,7 @@ fn cmd_new(parent_partial: String, title: String, json: bool) -> Result<()> {
     let node = model::Node::new(new_id.clone(), title.clone());
     graph.nodes.push(node);
     store::save(&root, &graph)?;
-    emit(&root, "create", &new_id, None, Some(&title));
+    emit(&root, "create", &new_id, None, Some(&title), None);
 
     if json {
         println!(
@@ -275,7 +329,7 @@ fn cmd_new(parent_partial: String, title: String, json: bool) -> Result<()> {
 
 // ── surface ───────────────────────────────────────────────────────────────────
 
-fn cmd_surface(id: Option<String>, json: bool) -> Result<()> {
+fn cmd_surface(id: Option<String>, reason: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
 
     match id {
@@ -311,8 +365,11 @@ fn cmd_surface(id: Option<String>, json: bool) -> Result<()> {
             }
             node.state = State::Ready;
             node.touch();
+            if let Some(r) = &reason {
+                set_reason(node, r);
+            }
             store::save(&root, &graph)?;
-            emit(&root, "surface", &resolved, None, None);
+            emit(&root, "surface", &resolved, None, None, reason.as_deref());
 
             if json {
                 println!("{}", serde_json::json!({ "id": resolved, "state": "ready" }));
@@ -326,7 +383,7 @@ fn cmd_surface(id: Option<String>, json: bool) -> Result<()> {
 
 // ── claim / unclaim ───────────────────────────────────────────────────────────
 
-fn cmd_claim(partial: String, as_part: Option<String>, json: bool) -> Result<()> {
+fn cmd_claim(partial: String, as_part: Option<String>, reason: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let mut graph = store::load(&root)?;
     let resolved = id::resolve(&graph, &partial)?;
@@ -353,9 +410,12 @@ fn cmd_claim(partial: String, as_part: Option<String>, json: bool) -> Result<()>
     node.state = State::Claimed;
     node.part = Some(part.clone());
     node.touch();
+    if let Some(r) = &reason {
+        set_reason(node, r);
+    }
     store::save(&root, &graph)?;
     store::upsert_agent(&root, &part).ok();
-    emit(&root, "claim", &resolved, Some(&part), None);
+    emit(&root, "claim", &resolved, Some(&part), None, reason.as_deref());
 
     if json {
         println!("{}", serde_json::json!({ "id": resolved, "state": "claimed", "part": part }));
@@ -365,7 +425,7 @@ fn cmd_claim(partial: String, as_part: Option<String>, json: bool) -> Result<()>
     Ok(())
 }
 
-fn cmd_unclaim(partial: String, json: bool) -> Result<()> {
+fn cmd_unclaim(partial: String, reason: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let mut graph = store::load(&root)?;
     let resolved = id::resolve(&graph, &partial)?;
@@ -381,8 +441,11 @@ fn cmd_unclaim(partial: String, json: bool) -> Result<()> {
     node.state = State::Ready;
     node.part = None;
     node.touch();
+    if let Some(r) = &reason {
+        set_reason(node, r);
+    }
     store::save(&root, &graph)?;
-    emit(&root, "unclaim", &resolved, None, None);
+    emit(&root, "unclaim", &resolved, None, None, reason.as_deref());
 
     if json {
         println!("{}", serde_json::json!({ "id": resolved, "state": "ready" }));
@@ -394,7 +457,7 @@ fn cmd_unclaim(partial: String, json: bool) -> Result<()> {
 
 // ── integrate ─────────────────────────────────────────────────────────────────
 
-fn cmd_integrate(partial: String, json: bool) -> Result<()> {
+fn cmd_integrate(partial: String, reason: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let mut graph = store::load(&root)?;
     let resolved = id::resolve(&graph, &partial)?;
@@ -421,12 +484,15 @@ fn cmd_integrate(partial: String, json: bool) -> Result<()> {
             .ok_or_else(|| anyhow::anyhow!("node not found: {}", resolved))?;
         node.state = State::Integrated;
         node.touch();
+        if let Some(r) = &reason {
+            set_reason(node, r);
+        }
     }
 
     store::migrate_archive_if_needed(&root).ok();
     store::archive_node(&root, &mut graph, &resolved)?;
     store::save(&root, &graph)?;
-    emit(&root, "integrate", &resolved, None, None);
+    emit(&root, "integrate", &resolved, None, None, reason.as_deref());
 
     if json {
         println!("{}", serde_json::json!({ "id": resolved, "state": "integrated" }));
@@ -438,7 +504,7 @@ fn cmd_integrate(partial: String, json: bool) -> Result<()> {
 
 // ── shadow / unshadow ─────────────────────────────────────────────────────────
 
-fn cmd_shadow(id: Option<String>, json: bool) -> Result<()> {
+fn cmd_shadow(id: Option<String>, reason: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
 
     match id {
@@ -473,8 +539,11 @@ fn cmd_shadow(id: Option<String>, json: bool) -> Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("node not found: {}", resolved))?;
             node.shadowed = true;
             node.touch();
+            if let Some(r) = &reason {
+                set_reason(node, r);
+            }
             store::save(&root, &graph)?;
-            emit(&root, "shadow", &resolved, None, None);
+            emit(&root, "shadow", &resolved, None, None, reason.as_deref());
 
             if json {
                 println!("{}", serde_json::json!({ "id": resolved, "shadowed": true }));
@@ -486,7 +555,7 @@ fn cmd_shadow(id: Option<String>, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn cmd_unshadow(partial: String, json: bool) -> Result<()> {
+fn cmd_unshadow(partial: String, reason: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let mut graph = store::load(&root)?;
     let resolved = id::resolve(&graph, &partial)?;
@@ -496,8 +565,11 @@ fn cmd_unshadow(partial: String, json: bool) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("node not found: {}", resolved))?;
     node.shadowed = false;
     node.touch();
+    if let Some(r) = &reason {
+        set_reason(node, r);
+    }
     store::save(&root, &graph)?;
-    emit(&root, "unshadow", &resolved, None, None);
+    emit(&root, "unshadow", &resolved, None, None, reason.as_deref());
 
     if json {
         println!("{}", serde_json::json!({ "id": resolved, "shadowed": false }));
@@ -543,6 +615,7 @@ fn cmd_show(partial: String, json: bool) -> Result<()> {
                 "state": node.state.to_string(),
                 "shadowed": node.shadowed,
                 "part": node.part,
+                "meta": node.meta,
                 "created_at": node.created_at,
                 "updated_at": node.updated_at,
                 "body": node.body,
@@ -561,6 +634,9 @@ fn cmd_show(partial: String, json: bool) -> Result<()> {
         );
         if let Some(p) = &node.part {
             println!("part:     {}", p);
+        }
+        if let Some(r) = node.meta.as_ref().and_then(|m| m["_reason"].as_str()) {
+            println!("reason:   {}", r);
         }
         println!("created:  {}", node.created_at.format("%Y-%m-%d %H:%M"));
         println!("updated:  {}", node.updated_at.format("%Y-%m-%d %H:%M"));
@@ -677,11 +753,18 @@ fn cmd_therapy(json: bool) -> Result<()> {
         let out: Vec<_> = nodes
             .iter()
             .map(|n| {
-                serde_json::json!({
+                let user_reason = graph.get_node(&n.id)
+                    .and_then(|node| node.meta.as_ref())
+                    .and_then(|m| m["_reason"].as_str());
+                let mut obj = serde_json::json!({
                     "id": n.id, "title": n.title,
                     "part": n.part, "updated_at": n.updated_at,
                     "reason": n.reason
-                })
+                });
+                if let Some(r) = user_reason {
+                    obj["_reason"] = serde_json::json!(r);
+                }
+                obj
             })
             .collect();
         println!("{}", serde_json::to_string_pretty(&out)?);
@@ -690,10 +773,19 @@ fn cmd_therapy(json: bool) -> Result<()> {
     } else {
         for n in &nodes {
             let part = n.part.as_deref().unwrap_or("—");
-            println!(
-                "{:<20}  {:<40}  {:<20}  {}",
-                n.id, n.title, part, n.reason
-            );
+            let user_reason = graph.get_node(&n.id)
+                .and_then(|node| node.meta.as_ref())
+                .and_then(|m| m["_reason"].as_str());
+            match user_reason {
+                Some(r) => println!(
+                    "{:<20}  {:<40}  {:<20}  {} — {}",
+                    n.id, n.title, part, n.reason, r
+                ),
+                None => println!(
+                    "{:<20}  {:<40}  {:<20}  {}",
+                    n.id, n.title, part, n.reason
+                ),
+            }
         }
     }
     Ok(())
@@ -838,12 +930,16 @@ fn cmd_log(limit: usize, json: bool) -> Result<()> {
             let node_id = e["node_id"].as_str().unwrap_or("?");
             let part = e["part"].as_str().unwrap_or("");
             let detail = e["detail"].as_str().unwrap_or("");
-            let extra = match (part, detail) {
+            let reason = e["reason"].as_str().unwrap_or("");
+            let mut extra = match (part, detail) {
                 ("", "") => String::new(),
                 (p, "") => format!("  {}", p),
                 ("", d) => format!("  {}", d),
                 (p, d) => format!("  {}  {}", p, d),
             };
+            if !reason.is_empty() {
+                extra.push_str(&format!("  ({})", reason));
+            }
             // Show only date+time, not full RFC3339
             let ts_short = &ts[..19].replace('T', " ");
             println!("{}  {:<12}  {}{}", ts_short, action, node_id, extra);

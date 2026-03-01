@@ -714,6 +714,161 @@ fn therapy_surfaces_shadowed_nodes() {
 }
 
 #[test]
+fn therapy_shows_reason_for_shadowed() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Stuck");
+    surface_id(&dir, &id);
+    claim(&dir, &id, "agent-1");
+    cx(&dir).args(["shadow", &id, "--reason", "waiting for design review"])
+        .assert().success();
+
+    // Text output shows the reason
+    cx(&dir).args(["therapy"]).assert().success()
+        .stdout(contains("waiting for design review"));
+
+    // JSON output includes _reason
+    let out = cx(&dir).args(["--json", "therapy"]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v[0]["_reason"], "waiting for design review");
+}
+
+// ── cx --reason flag ──────────────────────────────────────────────────────────
+
+#[test]
+fn reason_on_claim_persists_in_events() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Task");
+    surface_id(&dir, &id);
+    cx(&dir).args(["claim", &id, "--as", "agent-1", "--reason", "has rust capability"])
+        .assert().success();
+
+    // Check events.jsonl
+    let events_raw = std::fs::read_to_string(dir.path().join(".complex/events.jsonl")).unwrap();
+    let claim_event: serde_json::Value = events_raw
+        .lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .find(|e: &serde_json::Value| e["action"] == "claim")
+        .unwrap();
+    assert_eq!(claim_event["reason"], "has rust capability");
+}
+
+#[test]
+fn reason_on_claim_writes_meta() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Task");
+    surface_id(&dir, &id);
+    cx(&dir).args(["claim", &id, "--as", "agent-1", "--reason", "matching capability"])
+        .assert().success();
+
+    let g = graph_json(&dir);
+    assert_eq!(g["nodes"][0]["meta"]["_reason"], "matching capability");
+}
+
+#[test]
+fn reason_on_shadow_writes_meta() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Task");
+    cx(&dir).args(["shadow", &id, "--reason", "tests failing"])
+        .assert().success();
+
+    let g = graph_json(&dir);
+    assert_eq!(g["nodes"][0]["meta"]["_reason"], "tests failing");
+}
+
+#[test]
+fn reason_on_integrate_persists_in_archive() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Task");
+    surface_id(&dir, &id);
+    claim(&dir, &id, "agent-1");
+    cx(&dir).args(["integrate", &id, "--reason", "all tests pass"])
+        .assert().success();
+
+    let entries = archive_entries(&dir);
+    assert_eq!(entries[0]["meta"]["_reason"], "all tests pass");
+}
+
+#[test]
+fn reason_on_surface_writes_meta() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Task");
+    cx(&dir).args(["surface", &id, "--reason", "dependency resolved"])
+        .assert().success();
+
+    let g = graph_json(&dir);
+    assert_eq!(g["nodes"][0]["meta"]["_reason"], "dependency resolved");
+}
+
+#[test]
+fn commands_without_reason_still_work() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Task");
+    surface_id(&dir, &id);
+    claim(&dir, &id, "agent-1");
+
+    // No --reason anywhere — should work fine
+    let g = graph_json(&dir);
+    assert!(g["nodes"][0]["meta"].is_null() || g["nodes"][0].get("meta").is_none());
+}
+
+#[test]
+fn show_displays_reason() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Task");
+    cx(&dir).args(["shadow", &id, "--reason", "blocked on API"])
+        .assert().success();
+
+    cx(&dir).args(["show", &id]).assert().success()
+        .stdout(contains("reason:   blocked on API"));
+
+    // JSON includes meta with _reason
+    let out = cx(&dir).args(["--json", "show", &id]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["meta"]["_reason"], "blocked on API");
+}
+
+#[test]
+fn reason_preserves_existing_meta() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Task");
+
+    // Set some user meta first
+    cx(&dir).args(["meta", &id, r#"{"capability":"rust","priority":1}"#])
+        .assert().success();
+
+    // Shadow with reason — should merge, not overwrite
+    cx(&dir).args(["shadow", &id, "--reason", "blocked"])
+        .assert().success();
+
+    let g = graph_json(&dir);
+    let meta = &g["nodes"][0]["meta"];
+    assert_eq!(meta["capability"], "rust");
+    assert_eq!(meta["priority"], 1);
+    assert_eq!(meta["_reason"], "blocked");
+}
+
+#[test]
+fn log_shows_reason() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Task");
+    cx(&dir).args(["shadow", &id, "--reason", "needs review"])
+        .assert().success();
+
+    cx(&dir).args(["log"]).assert().success()
+        .stdout(contains("(needs review)"));
+}
+
+#[test]
 fn therapy_surfaces_stale_claimed_nodes() {
     let dir = TempDir::new().unwrap();
     init(&dir);

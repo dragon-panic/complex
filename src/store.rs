@@ -164,6 +164,8 @@ pub struct Event<'a> {
     pub part: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<&'a str>,
 }
 
 pub fn append_event(root: &Path, event: Event<'_>) -> Result<()> {

@@ -161,7 +161,9 @@ cx show bX7c         # node detail + body
 | `cx relate <a> <b>` | Non-blocking association |
 | `cx discover <a> <b>` | `a` was found while working on `b` |
 
-All commands support `--json` for machine-readable output.
+All mutation commands accept `--reason "..."` to record rationale (stored in
+`events.jsonl` and `meta._reason`). All commands support `--json` for
+machine-readable output.
 
 ## Environment
 
