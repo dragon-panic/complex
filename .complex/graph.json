@@ -11,29 +11,14 @@
       "updated_at": "2026-03-01T00:09:52.638463176Z"
     },
     {
-      "id": "JMpv.izeU",
-      "title": "Write tests (init, add, surface, claim, integrate, block)",
+      "id": "JMpv.4cmQ",
+      "title": "cargo install + release build",
       "state": "ready",
       "shadowed": false,
       "part": null,
-      "created_at": "2026-03-01T00:09:52.656254527Z",
-      "updated_at": "2026-03-01T00:10:02.769961633Z"
-    },
-    {
-      "id": "JMpv.4cmQ",
-      "title": "cargo install + release build",
-      "state": "latent",
-      "shadowed": false,
-      "part": null,
       "created_at": "2026-03-01T00:09:52.664049837Z",
-      "updated_at": "2026-03-01T00:09:52.664049837Z"
+      "updated_at": "2026-03-01T15:28:59.499997558Z"
     }
   ],
-  "edges": [
-    {
-      "from": "JMpv.izeU",
-      "to": "JMpv.4cmQ",
-      "type": "blocks"
-    }
-  ]
+  "edges": []
 }
