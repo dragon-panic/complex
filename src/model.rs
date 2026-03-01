@@ -125,4 +125,24 @@ impl Graph {
     pub fn roots(&self) -> Vec<&Node> {
         self.nodes.iter().filter(|n| !n.id.contains('.')).collect()
     }
+
+    /// Returns true if adding a blocks edge from `from` to `to` would create a cycle.
+    /// Uses DFS: a cycle exists if `from` is reachable from `to` via existing blocks edges.
+    pub fn would_cycle(&self, from: &str, to: &str) -> bool {
+        let mut visited = std::collections::HashSet::new();
+        let mut stack = vec![to];
+        while let Some(node) = stack.pop() {
+            if node == from {
+                return true;
+            }
+            if visited.insert(node) {
+                for e in &self.edges {
+                    if e.from == node && e.edge_type == EdgeType::Blocks {
+                        stack.push(&e.to);
+                    }
+                }
+            }
+        }
+        false
+    }
 }

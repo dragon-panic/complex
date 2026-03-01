@@ -1,0 +1,56 @@
+[
+  {
+    "id": "ZpUb.nLD7",
+    "title": "task 1",
+    "state": "integrated",
+    "shadowed": false,
+    "part": null,
+    "created_at": "2026-03-01T15:19:48.806011944Z",
+    "updated_at": "2026-03-01T15:20:06.832303323Z"
+  },
+  {
+    "id": "ZpUb.IqXf",
+    "title": "task 2",
+    "state": "integrated",
+    "shadowed": false,
+    "part": null,
+    "created_at": "2026-03-01T15:19:48.823806168Z",
+    "updated_at": "2026-03-01T15:20:06.834004013Z"
+  },
+  {
+    "id": "ZpUb",
+    "title": "cycle test",
+    "state": "integrated",
+    "shadowed": false,
+    "part": null,
+    "created_at": "2026-03-01T15:19:48.787181717Z",
+    "updated_at": "2026-03-01T15:20:06.835704522Z"
+  },
+  {
+    "id": "JMpv.6V0V",
+    "title": "Add cx list command (all nodes, filterable by state)",
+    "state": "integrated",
+    "shadowed": false,
+    "part": "claude",
+    "created_at": "2026-03-01T00:09:52.657820386Z",
+    "updated_at": "2026-03-01T15:20:06.837350890Z"
+  },
+  {
+    "id": "JMpv.hzHx",
+    "title": "Handle cx new with non-existent parent gracefully",
+    "state": "integrated",
+    "shadowed": false,
+    "part": "claude",
+    "created_at": "2026-03-01T00:09:52.660839101Z",
+    "updated_at": "2026-03-01T15:20:06.839074944Z"
+  },
+  {
+    "id": "JMpv.rzj2",
+    "title": "Warn when cx block would create a cycle",
+    "state": "integrated",
+    "shadowed": false,
+    "part": "claude",
+    "created_at": "2026-03-01T00:09:52.662459733Z",
+    "updated_at": "2026-03-01T15:20:06.840530023Z"
+  }
+]

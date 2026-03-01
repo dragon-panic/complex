@@ -80,6 +80,12 @@ enum Commands {
 
     /// Mark node A as discovered while working on node B
     Discover { a: String, b: String },
+
+    /// List all nodes, optionally filtered by state
+    List {
+        #[arg(long, value_name = "STATE")]
+        state: Option<String>,
+    },
 }
 
 fn main() {
@@ -110,6 +116,7 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Unblock { a, b } => cmd_edge(a, b, EdgeType::Blocks, true, cli.json),
         Commands::Relate { a, b } => cmd_edge(a, b, EdgeType::Related, false, cli.json),
         Commands::Discover { a, b } => cmd_edge(a, b, EdgeType::DiscoveredFrom, false, cli.json),
+        Commands::List { state } => cmd_list(state, cli.json),
     }
 }
 
@@ -145,7 +152,8 @@ fn cmd_new(parent_partial: String, title: String, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let mut graph = store::load(&root)?;
 
-    let parent_id = id::resolve(&graph, &parent_partial)?;
+    let parent_id = id::resolve(&graph, &parent_partial)
+        .map_err(|_| anyhow::anyhow!("parent '{}' not found — use cx tree to list nodes", parent_partial))?;
     let new_id = id::generate(Some(&parent_id));
     let node = model::Node::new(new_id.clone(), title.clone());
     graph.nodes.push(node);
@@ -617,6 +625,11 @@ fn cmd_edge(
     let a = id::resolve(&graph, &a_partial)?;
     let b = id::resolve(&graph, &b_partial)?;
 
+    // Cycle check for blocks edges
+    if !remove && edge_type == EdgeType::Blocks && graph.would_cycle(&a, &b) {
+        bail!("adding {} --blocks→ {} would create a cycle", a, b);
+    }
+
     if remove {
         graph
             .edges
@@ -650,6 +663,45 @@ fn cmd_edge(
             );
         } else {
             println!("added  {} --{}→ {}", a, edge_type, b);
+        }
+    }
+    Ok(())
+}
+
+// ── list ──────────────────────────────────────────────────────────────────────
+
+fn cmd_list(state_filter: Option<String>, json: bool) -> Result<()> {
+    let root = store::find_root()?;
+    let graph = store::load(&root)?;
+
+    let nodes: Vec<&model::Node> = graph
+        .nodes
+        .iter()
+        .filter(|n| match &state_filter {
+            Some(s) => n.state.to_string() == *s,
+            None => true,
+        })
+        .collect();
+
+    if json {
+        let out: Vec<_> = nodes
+            .iter()
+            .map(|n| {
+                serde_json::json!({
+                    "id": n.id, "title": n.title,
+                    "state": n.state.to_string(),
+                    "shadowed": n.shadowed, "part": n.part,
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&out)?);
+    } else if nodes.is_empty() {
+        println!("no nodes{}", state_filter.map(|s| format!(" with state={}", s)).unwrap_or_default());
+    } else {
+        for n in &nodes {
+            let shadow = if n.shadowed { " [shadowed]" } else { "" };
+            let part = n.part.as_deref().unwrap_or("—");
+            println!("{:<20}  {:<40}  {:<12}  {}{}", n.id, n.title, n.state, part, shadow);
         }
     }
     Ok(())
