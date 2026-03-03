@@ -733,6 +733,131 @@ fn therapy_shows_reason_for_shadowed() {
     assert_eq!(v[0]["_reason"], "waiting for design review");
 }
 
+// ── add/new --body ───────────────────────────────────────────────────────────
+
+#[test]
+fn add_with_body_sets_body_at_creation() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let out = cx(&dir)
+        .args(["--json", "add", "With body", "--body", "## Description\n\nSome details."])
+        .output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let id = v["id"].as_str().unwrap();
+
+    let show = cx(&dir).args(["--json", "show", id]).output().unwrap();
+    let s: serde_json::Value = serde_json::from_slice(&show.stdout).unwrap();
+    assert_eq!(s["body"], "## Description\n\nSome details.");
+}
+
+#[test]
+fn new_with_body_sets_body_at_creation() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let parent = add(&dir, "Parent");
+    let out = cx(&dir)
+        .args(["--json", "new", &parent, "Child task", "--body", "Child body content"])
+        .output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let id = v["id"].as_str().unwrap();
+
+    let show = cx(&dir).args(["--json", "show", id]).output().unwrap();
+    let s: serde_json::Value = serde_json::from_slice(&show.stdout).unwrap();
+    assert_eq!(s["body"], "Child body content");
+}
+
+#[test]
+fn add_with_body_stdin_reads_piped_input() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let out = cx(&dir)
+        .args(["--json", "add", "Piped body", "--body", "-"])
+        .write_stdin("Body from stdin pipe")
+        .output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let id = v["id"].as_str().unwrap();
+
+    let show = cx(&dir).args(["--json", "show", id]).output().unwrap();
+    let s: serde_json::Value = serde_json::from_slice(&show.stdout).unwrap();
+    assert_eq!(s["body"], "Body from stdin pipe");
+}
+
+// ── cx edit (non-interactive) ─────────────────────────────────────────────────
+
+#[test]
+fn edit_body_flag_sets_body() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Needs body");
+
+    cx(&dir).args(["edit", &id, "--body", "Hello from --body flag"])
+        .assert().success().stdout(contains("saved"));
+
+    let out = cx(&dir).args(["--json", "show", &id]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["body"], "Hello from --body flag");
+}
+
+#[test]
+fn edit_file_flag_reads_from_file() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "File body");
+
+    let body_file = dir.path().join("body.md");
+    std::fs::write(&body_file, "# Task\n\nBody from file.").unwrap();
+
+    cx(&dir).args(["edit", &id, "--file", body_file.to_str().unwrap()])
+        .assert().success().stdout(contains("saved"));
+
+    let out = cx(&dir).args(["--json", "show", &id]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["body"], "# Task\n\nBody from file.");
+}
+
+#[test]
+fn edit_stdin_sets_body_when_piped() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Stdin body");
+
+    cx(&dir).args(["edit", &id])
+        .write_stdin("Piped body content")
+        .assert().success().stdout(contains("saved"));
+
+    let out = cx(&dir).args(["--json", "show", &id]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["body"], "Piped body content");
+}
+
+#[test]
+fn edit_body_no_changes_prints_message() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Same body");
+
+    // Set initial body
+    cx(&dir).args(["edit", &id, "--body", "Initial"])
+        .assert().success();
+
+    // Set same body again
+    cx(&dir).args(["edit", &id, "--body", "Initial"])
+        .assert().success().stdout(contains("no changes"));
+}
+
+#[test]
+fn edit_body_and_file_conflict() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Conflict");
+
+    cx(&dir).args(["edit", &id, "--body", "text", "--file", "/tmp/x"])
+        .assert().failure();
+}
+
 // ── cx --reason flag ──────────────────────────────────────────────────────────
 
 #[test]

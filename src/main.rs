@@ -24,12 +24,20 @@ enum Commands {
     Init,
 
     /// Create a new root complex (human-facing entry point)
-    Add { title: Vec<String> },
+    Add {
+        title: Vec<String>,
+        /// Set body inline, or pipe stdin (e.g. echo "md" | cx add "title" --body -)
+        #[arg(long)]
+        body: Option<String>,
+    },
 
     /// Create a child node under a parent
     New {
         parent_id: String,
         title: Vec<String>,
+        /// Set body inline, or pipe stdin (e.g. echo "md" | cx new <parent> "title" --body -)
+        #[arg(long)]
+        body: Option<String>,
     },
 
     /// List ready nodes, or promote a latent node to ready
@@ -94,8 +102,19 @@ enum Commands {
     /// Show stale or stuck nodes needing review
     Therapy,
 
-    /// Open a node's body in $EDITOR
-    Edit { id: String },
+    /// Set a node's body (auto-detects: piped → stdin, TTY → $EDITOR)
+    Edit {
+        id: String,
+        /// Set body directly from this string
+        #[arg(long, conflicts_with_all = ["file", "editor"])]
+        body: Option<String>,
+        /// Read body from a file path
+        #[arg(long, conflicts_with_all = ["body", "editor"])]
+        file: Option<String>,
+        /// Force $EDITOR even when stdin is piped
+        #[arg(long, conflicts_with_all = ["body", "file"])]
+        editor: bool,
+    },
 
     /// Declare that node A blocks node B
     Block { a: String, b: String },
@@ -146,8 +165,8 @@ fn main() {
 fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Init => cmd_init(),
-        Commands::Add { title } => cmd_add(title.join(" "), cli.json),
-        Commands::New { parent_id, title } => cmd_new(parent_id, title.join(" "), cli.json),
+        Commands::Add { title, body } => cmd_add(title.join(" "), body, cli.json),
+        Commands::New { parent_id, title, body } => cmd_new(parent_id, title.join(" "), body, cli.json),
         Commands::Surface { id, reason } => cmd_surface(id, reason, cli.json),
         Commands::Claim { id, r#as, reason } => cmd_claim(id, r#as, reason, cli.json),
         Commands::Unclaim { id, reason } => cmd_unclaim(id, reason, cli.json),
@@ -158,7 +177,7 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Tree { id } => cmd_tree(id, cli.json),
         Commands::Parts => cmd_parts(cli.json),
         Commands::Therapy => cmd_therapy(cli.json),
-        Commands::Edit { id } => cmd_edit(id),
+        Commands::Edit { id, body, file, editor } => cmd_edit(id, body, file, editor),
         Commands::Block { a, b } => cmd_edge(a, b, EdgeType::Blocks, false, cli.json),
         Commands::Unblock { a, b } => cmd_edge(a, b, EdgeType::Blocks, true, cli.json),
         Commands::Relate { a, b } => cmd_edge(a, b, EdgeType::Related, false, cli.json),
@@ -168,6 +187,20 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Meta { id, value } => cmd_meta(id, value, cli.json),
         Commands::Log { limit } => cmd_log(limit, cli.json),
         Commands::Agents => cmd_agents(cli.json),
+    }
+}
+
+// ── body helper ──────────────────────────────────────────────────────────────
+
+/// Resolve a --body flag value: "-" means read stdin, anything else is literal.
+fn resolve_body(raw: &str) -> Result<String> {
+    if raw == "-" {
+        use std::io::Read;
+        let mut buf = String::new();
+        std::io::stdin().read_to_string(&mut buf)?;
+        Ok(buf)
+    } else {
+        Ok(raw.to_string())
     }
 }
 
@@ -221,8 +254,10 @@ cx claim <id> --as <name>         take ownership (or set CX_PART env var)
 cx unclaim <id>                   release if you cannot complete it
 cx integrate <id>                 mark done → archive, unblocks dependents
 cx new <parent-id> <title>        create a child task under a parent
+cx add <title> --body "markdown"  create with body in one shot (also works on cx new)
 cx discover <new-id> <source-id>  record task found while working on source
 cx shadow <id>                    flag as blocked/stuck
+cx edit <id> --body "markdown"    update body non-interactively (or pipe: echo "md" | cx edit <id>)
 cx show <id> --json               full node detail: state, edges, body, children
 cx tree --json                    full hierarchy with states
 cx parts --json                   what each part currently holds
@@ -286,7 +321,7 @@ fn cmd_init() -> Result<()> {
 
 // ── add / new ─────────────────────────────────────────────────────────────────
 
-fn cmd_add(title: String, json: bool) -> Result<()> {
+fn cmd_add(title: String, body: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let mut graph = store::load(&root)?;
 
@@ -294,6 +329,12 @@ fn cmd_add(title: String, json: bool) -> Result<()> {
     let node = model::Node::new(new_id.clone(), title.clone());
     graph.nodes.push(node);
     store::save(&root, &graph)?;
+
+    if let Some(raw) = &body {
+        let content = resolve_body(raw)?;
+        store::write_body(&root, &new_id, &content)?;
+    }
+
     emit(&root, "create", &new_id, None, Some(&title), None);
 
     if json {
@@ -304,7 +345,7 @@ fn cmd_add(title: String, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn cmd_new(parent_partial: String, title: String, json: bool) -> Result<()> {
+fn cmd_new(parent_partial: String, title: String, body: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let mut graph = store::load(&root)?;
 
@@ -314,6 +355,12 @@ fn cmd_new(parent_partial: String, title: String, json: bool) -> Result<()> {
     let node = model::Node::new(new_id.clone(), title.clone());
     graph.nodes.push(node);
     store::save(&root, &graph)?;
+
+    if let Some(raw) = &body {
+        let content = resolve_body(raw)?;
+        store::write_body(&root, &new_id, &content)?;
+    }
+
     emit(&root, "create", &new_id, None, Some(&title), None);
 
     if json {
@@ -793,20 +840,34 @@ fn cmd_therapy(json: bool) -> Result<()> {
 
 // ── edit ──────────────────────────────────────────────────────────────────────
 
-fn cmd_edit(partial: String) -> Result<()> {
+fn cmd_edit(partial: String, body: Option<String>, file: Option<String>, force_editor: bool) -> Result<()> {
     let root = store::find_root()?;
     let graph = store::load(&root)?;
     let resolved = id::resolve(&graph, &partial)?;
 
-    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
     let existing = store::read_body(&root, &resolved)?.unwrap_or_default();
 
-    let tmp = std::env::temp_dir().join(format!("cx-{}.md", resolved));
-    std::fs::write(&tmp, &existing)?;
+    // Determine body content from flags or auto-detect
+    let updated = if let Some(text) = body {
+        text
+    } else if let Some(path) = file {
+        std::fs::read_to_string(&path)
+            .map_err(|e| anyhow::anyhow!("cannot read {}: {}", path, e))?
+    } else if force_editor || std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+        // Interactive: open $EDITOR
+        let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+        let tmp = std::env::temp_dir().join(format!("cx-{}.md", resolved));
+        std::fs::write(&tmp, &existing)?;
+        std::process::Command::new(&editor).arg(&tmp).status()?;
+        std::fs::read_to_string(&tmp)?
+    } else {
+        // Non-interactive: read from stdin
+        use std::io::Read;
+        let mut buf = String::new();
+        std::io::stdin().read_to_string(&mut buf)?;
+        buf
+    };
 
-    std::process::Command::new(&editor).arg(&tmp).status()?;
-
-    let updated = std::fs::read_to_string(&tmp)?;
     if updated != existing {
         store::write_body(&root, &resolved, &updated)?;
         println!("saved  {}", resolved);

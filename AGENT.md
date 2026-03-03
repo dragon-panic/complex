@@ -25,8 +25,10 @@ cx claim <id> --as <name>         take ownership (or set CX_PART env var)
 cx unclaim <id>                   release if you cannot complete it
 cx integrate <id>                 mark done → archive, unblocks dependents
 cx new <parent-id> <title>        create a child task under a parent
+cx add <title> --body "markdown"  create with body in one shot (also works on cx new)
 cx discover <new-id> <source-id>  record task found while working on source
 cx shadow <id>                    flag as blocked/stuck
+cx edit <id> --body "markdown"    update body non-interactively (or pipe: echo "md" | cx edit <id>)
 cx show <id> --json               full node detail: state, edges, body, children
 cx tree --json                    full hierarchy with states
 cx parts --json                   what each part currently holds
