@@ -102,6 +102,12 @@ enum Commands {
     /// Show stale or stuck nodes needing review
     Therapy,
 
+    /// Rename a node's title
+    Rename {
+        id: String,
+        title: Vec<String>,
+    },
+
     /// Set a node's body (auto-detects: piped → stdin, TTY → $EDITOR)
     Edit {
         id: String,
@@ -177,6 +183,7 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Tree { id } => cmd_tree(id, cli.json),
         Commands::Parts => cmd_parts(cli.json),
         Commands::Therapy => cmd_therapy(cli.json),
+        Commands::Rename { id, title } => cmd_rename(id, title.join(" "), cli.json),
         Commands::Edit { id, body, file, editor } => cmd_edit(id, body, file, editor),
         Commands::Block { a, b } => cmd_edge(a, b, EdgeType::Blocks, false, cli.json),
         Commands::Unblock { a, b } => cmd_edge(a, b, EdgeType::Blocks, true, cli.json),
@@ -256,6 +263,7 @@ cx integrate <id>                 mark done → archive, unblocks dependents
 cx new <parent-id> <title>        create a child task under a parent
 cx add <title> --body "markdown"  create with body in one shot (also works on cx new)
 cx discover <new-id> <source-id>  record task found while working on source
+cx rename <id> <new title>        rename a node
 cx shadow <id>                    flag as blocked/stuck
 cx edit <id> --body "markdown"    update body non-interactively (or pipe: echo "md" | cx edit <id>)
 cx show <id> --json               full node detail: state, edges, body, children
@@ -834,6 +842,30 @@ fn cmd_therapy(json: bool) -> Result<()> {
                 ),
             }
         }
+    }
+    Ok(())
+}
+
+// ── rename ────────────────────────────────────────────────────────────────────
+
+fn cmd_rename(partial: String, title: String, json: bool) -> Result<()> {
+    let root = store::find_root()?;
+    let mut graph = store::load(&root)?;
+    let resolved = id::resolve(&graph, &partial)?;
+
+    let node = graph
+        .get_node_mut(&resolved)
+        .ok_or_else(|| anyhow::anyhow!("node not found: {}", resolved))?;
+
+    node.title = title.clone();
+    node.touch();
+    store::save(&root, &graph)?;
+    emit(&root, "rename", &resolved, None, Some(&title), None);
+
+    if json {
+        println!("{}", serde_json::json!({ "id": resolved, "title": title }));
+    } else {
+        println!("renamed  {}  → {}", resolved, title);
     }
     Ok(())
 }

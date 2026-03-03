@@ -733,6 +733,35 @@ fn therapy_shows_reason_for_shadowed() {
     assert_eq!(v[0]["_reason"], "waiting for design review");
 }
 
+// ── rename ───────────────────────────────────────────────────────────────────
+
+#[test]
+fn rename_updates_title() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Old title");
+
+    cx(&dir).args(["rename", &id, "New", "title"])
+        .assert().success().stdout(contains("renamed"));
+
+    let out = cx(&dir).args(["--json", "show", &id]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["title"], "New title");
+}
+
+#[test]
+fn rename_json_output() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Original");
+
+    let out = cx(&dir).args(["--json", "rename", &id, "Updated"])
+        .output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["title"], "Updated");
+}
+
 // ── add/new --body ───────────────────────────────────────────────────────────
 
 #[test]
