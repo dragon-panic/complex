@@ -1,92 +1,18 @@
 # complex — agent guide
 
-This project uses `complex` (cx) for task tracking. You are a **part** —
-an agent that claims, works, and integrates tasks.
+This project uses `complex` (cx) for task tracking.
 
-## Workflow
-
-1. Find available work:   cx surface --json
-2. Claim a task:          cx claim <id> --as <your-name>
-3. Do the work
-4. If you discover a sub-task while working:
-                          cx new <parent-id> <title>
-                          cx discover <new-id> <current-id>
-5. Mark done:             cx integrate <id>
-6. Commit:                git add .complex/ && git commit -m "integrate(<id>): <title>"
-
-Tasks are **parallel by default**. Only an explicit `cx block <a> <b>` creates
-ordering. Run `cx surface` at any time — it only shows tasks with no open blockers.
-
-## Commands you will use
+Run the following command to get the full, up-to-date agent guide from your
+installed `cx` binary:
 
 ```
-cx status --json                  tree + ready nodes (quick overview)
-cx surface --json                 ready tasks (no open blockers)
-cx surface --all --json           promote all latent tasks with no blockers to ready
-cx claim <id> --as <name>         take ownership (or set CX_PART env var)
-cx unclaim <id>                   release if you cannot complete it
-cx integrate <id>                 mark done → archive; auto-surfaces any newly unblocked latent tasks
-                                  JSON output includes "newly_surfaced": [...] when tasks are unblocked
-cx rm <id>                        remove/discard a node (not integrate)
-cx new <parent-id> <title>        create a child task under a parent
-cx add <title> --body "markdown"  create with body in one shot (also works on cx new)
-cx add <title> --by <who>        record who filed this (or set CX_FILED_BY)
-cx discover <new-id> <source-id>  record task found while working on source
-cx find <query>                   search nodes by title (case-insensitive)
-cx rename <id> <new title>        rename a node
-cx shadow <id>                    flag as blocked/stuck
-cx edit <id> --body "markdown"    update body non-interactively (or pipe: echo "md" | cx edit <id>)
-cx show <id> --json               full node detail: state, edges, body, children
-cx tree --json                    full hierarchy with states (nested children)
-cx parts --json                   what each part currently holds
-cx therapy --json                 stale (claimed >24h), shadowed, and orphan body files
-cx list --state claimed --json    all nodes in a given state
+cx agent
 ```
 
-## State model
+If `cx` is not on your PATH, install it first:
 
 ```
-latent → ready → claimed → integrated
-                    ↕
-                 shadowed  (flag — orthogonal to state)
+cargo install --git https://github.com/... complex
+# or, from a local clone:
+cargo install --path /path/to/complex
 ```
-
-**Important:** `cx claim` only works on `ready` nodes. You must `cx surface <id>`
-a latent node before claiming it.
-
-## IDs
-
-Hierarchy is encoded in the ID:
-  a3F2              root complex
-  a3F2.bX7c         child task
-  a3F2.bX7c.Qd4e   grandchild subtask
-
-Short IDs (leaf segment) work when unambiguous:  cx claim bX7c
-
-## Environment
-
-  CX_PART      your identity — set this before claiming anything
-  CX_FILED_BY  default --by value (convention: project:agent, e.g. seguro:ox)
-
-## Rationale (--reason)
-
-All mutation commands accept an optional `--reason` flag to record **why** you
-are taking an action. The reason is stored in `events.jsonl` (audit trail) and
-in the node's `meta._reason` field (quick lookup for orchestrators).
-
-```
-cx claim <id> --as agent-1 --reason "has rust capability, no blockers"
-cx shadow <id> --reason "tests failing, needs upstream fix in auth module"
-cx unclaim <id> --reason "blocked on external API, releasing for others"
-cx integrate <id> --reason "all tests pass, code reviewed"
-cx surface <id> --reason "dependency resolved, ready for work"
-cx unshadow <id> --reason "upstream fix landed"
-```
-
-Reason is always optional — omitting it never blocks an action.
-
-## What to commit
-
-After any cx mutation, stage and commit `.complex/`:
-  git add .complex/ && git commit -m "claim(bX7c): implement JWT tokens"
-  git add .complex/ && git commit -m "integrate(bX7c): implement JWT tokens"
