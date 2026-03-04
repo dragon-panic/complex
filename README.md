@@ -144,9 +144,10 @@ cx show bX7c         # node detail + body
 | `cx new <parent> <title>` | Create a child node (`--by <who>` to record filer) |
 | `cx surface` | List ready nodes |
 | `cx surface <id>` | Promote latent → ready |
-| `cx claim <id>` | Claim a ready node (`--as <part>` or `$CX_PART`) |
+| `cx surface --all` | Promote all latent nodes with no open blockers |
+| `cx claim <id>` | Claim a node (`--as <part>` or `$CX_PART`) |
 | `cx unclaim <id>` | Release a claim → ready |
-| `cx integrate <id>` | Mark done, move to archive |
+| `cx integrate <id>` | Mark done, move to archive; auto-surfaces newly unblocked tasks |
 | `cx rm <id>` | Remove/discard a node (not integrate) |
 | `cx shadow` | List shadowed nodes |
 | `cx shadow <id>` | Flag a node as shadowed |

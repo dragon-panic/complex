@@ -22,9 +22,11 @@ ordering. Run `cx surface` at any time — it only shows tasks with no open bloc
 ```
 cx status --json                  tree + ready nodes (quick overview)
 cx surface --json                 ready tasks (no open blockers)
-cx claim <id> --as <name>         take ownership (requires ready state)
+cx surface --all --json           promote all latent tasks with no blockers to ready
+cx claim <id> --as <name>         take ownership (or set CX_PART env var)
 cx unclaim <id>                   release if you cannot complete it
-cx integrate <id>                 mark done → archive, unblocks dependents
+cx integrate <id>                 mark done → archive; auto-surfaces any newly unblocked latent tasks
+                                  JSON output includes "newly_surfaced": [...] when tasks are unblocked
 cx rm <id>                        remove/discard a node (not integrate)
 cx new <parent-id> <title>        create a child task under a parent
 cx add <title> --body "markdown"  create with body in one shot (also works on cx new)

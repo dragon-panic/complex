@@ -1,4 +1,5 @@
 use assert_cmd::Command;
+use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use tempfile::TempDir;
 
@@ -1329,6 +1330,95 @@ fn therapy_surfaces_stale_claimed_nodes() {
         .stdout(contains("stale"));
 }
 
+// ── auto-surface after integrate ──────────────────────────────────────────────
+
+#[test]
+fn integrate_auto_surfaces_unblocked_latent_node() {
+    // A (latent) blocks B (latent). Surface and integrate A.
+    // B should be auto-promoted to ready without manual cx surface B.
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let b = add(&dir, "B");
+    cx(&dir).args(["block", &a, &b]).assert().success();
+    surface_id(&dir, &a);
+    claim(&dir, &a, "agent-1");
+
+    // B is latent and blocked — not surfaceable yet
+    cx(&dir).args(["surface"]).assert().success()
+        .stdout(predicates::str::contains("B").not());
+
+    let out = cx(&dir)
+        .args(["--json", "integrate", &a])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+
+    // JSON output should include newly_surfaced
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["state"], "integrated");
+    let newly = v["newly_surfaced"].as_array().unwrap();
+    assert_eq!(newly.len(), 1);
+    assert!(newly[0].as_str().unwrap().ends_with(&b));
+
+    // B should now appear in surface listing
+    cx(&dir).args(["surface"]).assert().success()
+        .stdout(contains("B"));
+}
+
+#[test]
+fn integrate_does_not_auto_surface_if_other_blocker_remains() {
+    // A blocks C. B blocks C. Integrating A should NOT auto-surface C (still blocked by B).
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let b = add(&dir, "B");
+    let c = add(&dir, "C");
+    cx(&dir).args(["block", &a, &c]).assert().success();
+    cx(&dir).args(["block", &b, &c]).assert().success();
+    surface_id(&dir, &a);
+    surface_id(&dir, &b);
+    claim(&dir, &a, "agent-1");
+
+    let out = cx(&dir)
+        .args(["--json", "integrate", &a])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+
+    // No newly_surfaced — C still blocked by B
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(v.get("newly_surfaced").is_none());
+
+    // C still not in surface (B still blocks it)
+    cx(&dir).args(["surface"]).assert().success()
+        .stdout(predicates::str::contains("C").not());
+}
+
+#[test]
+fn integrate_auto_surface_ready_node_not_re_surfaced() {
+    // A blocks B. B is already ready (manually surfaced). Integrating A should
+    // not double-surface B (it's already ready, not latent).
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let b = add(&dir, "B");
+    cx(&dir).args(["block", &a, &b]).assert().success();
+    surface_id(&dir, &a);
+    surface_id(&dir, &b); // manually surfaced even though blocked
+    claim(&dir, &a, "agent-1");
+
+    let out = cx(&dir)
+        .args(["--json", "integrate", &a])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+
+    // B was already ready, so not in newly_surfaced
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(v.get("newly_surfaced").is_none());
+}
+
 // ── cx rm ─────────────────────────────────────────────────────────────────
 
 #[test]
@@ -1920,4 +2010,80 @@ fn unblocked_parent_children_reappear_in_surface() {
         .map(|n| n["id"].as_str().unwrap())
         .collect();
     assert!(ids.contains(&child.as_str()), "child should reappear after parent is unblocked");
+}
+
+// ── cx surface --all ───────────────────────────────────────────────────────────
+
+#[test]
+fn surface_all_promotes_eligible_latent_nodes() {
+    // Three nodes: A (no blockers), B (no blockers), C (blocked by A).
+    // surface --all should promote A and B but not C.
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let b = add(&dir, "B");
+    let c = add(&dir, "C");
+    cx(&dir).args(["block", &a, &c]).assert().success();
+
+    let out = cx(&dir)
+        .args(["--json", "surface", "--all"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+
+    let arr: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ids: Vec<&str> = arr
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["id"].as_str().unwrap())
+        .collect();
+
+    // A and B should be surfaced, C should not
+    assert!(ids.iter().any(|id| id.ends_with(&a)));
+    assert!(ids.iter().any(|id| id.ends_with(&b)));
+    assert!(!ids.iter().any(|id| id.ends_with(&c)));
+
+    // Verify state in graph
+    let g = graph_json(&dir);
+    for node in g["nodes"].as_array().unwrap() {
+        let id = node["id"].as_str().unwrap();
+        if id.ends_with(&a) || id.ends_with(&b) {
+            assert_eq!(node["state"], "ready", "{} should be ready", id);
+        } else if id.ends_with(&c) {
+            assert_eq!(node["state"], "latent", "{} should still be latent", id);
+        }
+    }
+}
+
+#[test]
+fn surface_all_empty_when_all_blocked_or_ready() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let b = add(&dir, "B");
+    cx(&dir).args(["block", &a, &b]).assert().success();
+    surface_id(&dir, &a); // A is now ready
+
+    // Only B is latent, but it's blocked by A — nothing eligible
+    let out = cx(&dir)
+        .args(["--json", "surface", "--all"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let arr: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(arr.as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn surface_all_human_readable_output() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "Alpha");
+    let b = add(&dir, "Beta");
+
+    cx(&dir).args(["surface", "--all"]).assert().success()
+        .stdout(contains(&a))
+        .stdout(contains(&b))
+        .stdout(contains("→ ready"));
 }

@@ -62,6 +62,9 @@ enum Commands {
         /// Why these nodes are being surfaced
         #[arg(long)]
         reason: Option<String>,
+        /// Promote ALL latent nodes with no open blockers to ready in one shot
+        #[arg(long, conflicts_with = "ids")]
+        all: bool,
     },
 
     /// Claim a node for a part (agent)
@@ -222,7 +225,7 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Init { ephemeral } => cmd_init(ephemeral),
         Commands::Add { title, body, body_file, by } => cmd_add(title.join(" "), body, body_file, by, cli.json),
         Commands::New { parent_id, title, body, body_file, by } => cmd_new(parent_id, title.join(" "), body, body_file, by, cli.json),
-        Commands::Surface { ids, reason } => cmd_surface(ids, reason, cli.json),
+        Commands::Surface { ids, reason, all } => cmd_surface(ids, reason, all, cli.json),
         Commands::Claim { id, r#as, reason } => cmd_claim(id, r#as, reason, cli.json),
         Commands::Unclaim { id, reason } => cmd_unclaim(id, reason, cli.json),
         Commands::Integrate { id, reason } => cmd_integrate(id, reason, cli.json),
@@ -338,9 +341,11 @@ ordering. Run `cx surface` at any time — it only shows tasks with no open bloc
 ```
 cx status --json                  tree + ready nodes (quick overview)
 cx surface --json                 ready tasks (no open blockers)
-cx claim <id> --as <name>         take ownership (requires ready state)
+cx surface --all --json           promote all latent tasks with no blockers to ready
+cx claim <id> --as <name>         take ownership (or set CX_PART env var)
 cx unclaim <id>                   release if you cannot complete it
-cx integrate <id>                 mark done → archive, unblocks dependents
+cx integrate <id>                 mark done → archive; auto-surfaces any newly unblocked latent tasks
+                                  JSON includes "newly_surfaced": [...] when tasks are unblocked
 cx rm <id>                        remove/discard a node (not integrate)
 cx new <parent-id> <title>        create a child task under a parent
 cx add <title> --body "markdown"  create with body in one shot (also works on cx new)
@@ -514,8 +519,44 @@ fn cmd_new(parent_partial: String, title: String, body: Option<String>, body_fil
 
 // ── surface ───────────────────────────────────────────────────────────────────
 
-fn cmd_surface(ids: Vec<String>, reason: Option<String>, json: bool) -> Result<()> {
+fn cmd_surface(ids: Vec<String>, reason: Option<String>, all: bool, json: bool) -> Result<()> {
     let root = store::find_root()?;
+
+    if all {
+        // Bulk-promote: all latent nodes with no open blockers → ready
+        let mut graph = store::load(&root)?;
+        let eligible = graph.unblocked_latent_ids();
+        if eligible.is_empty() {
+            if json {
+                println!("[]");
+            } else {
+                println!("no latent nodes with open blockers cleared");
+            }
+            return Ok(());
+        }
+        for id in &eligible {
+            if let Some(node) = graph.get_node_mut(id) {
+                node.state = State::Ready;
+                node.touch();
+                if let Some(r) = &reason {
+                    set_reason(node, r);
+                }
+            }
+        }
+        store::save(&root, &graph)?;
+        for id in &eligible {
+            emit(&root, "surface", id, None, None, reason.as_deref());
+        }
+        if json {
+            let out: Vec<_> = eligible.iter().map(|id| serde_json::json!({ "id": id, "state": "ready" })).collect();
+            println!("{}", serde_json::to_string_pretty(&out)?);
+        } else {
+            for id in &eligible {
+                println!("surfaced  {}  → ready", id);
+            }
+        }
+        return Ok(());
+    }
 
     if ids.is_empty() {
         let graph = store::load(&root)?;
@@ -683,6 +724,30 @@ fn cmd_integrate(partial: String, reason: Option<String>, json: bool) -> Result<
         );
     }
 
+    // Before archiving: find latent nodes that `resolved` is blocking and that will
+    // become fully unblocked once `resolved` integrates.
+    let auto_surface: Vec<String> = graph
+        .edges
+        .iter()
+        .filter(|e| e.from == resolved && e.edge_type == EdgeType::Blocks)
+        .map(|e| e.to.clone())
+        .filter(|y_id| {
+            // Y must be latent
+            graph
+                .get_node(y_id)
+                .map_or(false, |n| n.state == State::Latent)
+            // Y must have no other non-integrated blockers besides `resolved`
+            && !graph.edges.iter().any(|e| {
+                e.to == *y_id
+                    && e.edge_type == EdgeType::Blocks
+                    && e.from != resolved
+                    && graph
+                        .get_node(&e.from)
+                        .map_or(false, |b| b.state != State::Integrated)
+            })
+        })
+        .collect();
+
     {
         let node = graph
             .get_node_mut(&resolved)
@@ -696,13 +761,39 @@ fn cmd_integrate(partial: String, reason: Option<String>, json: bool) -> Result<
 
     store::migrate_archive_if_needed(&root).ok();
     store::archive_node(&root, &mut graph, &resolved)?;
+
+    // Promote newly unblocked latent nodes to ready
+    for y_id in &auto_surface {
+        if let Some(node) = graph.get_node_mut(y_id) {
+            node.state = State::Ready;
+            node.touch();
+        }
+    }
+
     store::save(&root, &graph)?;
     emit(&root, "integrate", &resolved, None, None, reason.as_deref());
+    for y_id in &auto_surface {
+        emit(
+            &root,
+            "surface",
+            y_id,
+            None,
+            None,
+            Some("auto-surfaced: last blocker integrated"),
+        );
+    }
 
     if json {
-        println!("{}", serde_json::json!({ "id": resolved, "state": "integrated" }));
+        let mut out = serde_json::json!({ "id": resolved, "state": "integrated" });
+        if !auto_surface.is_empty() {
+            out["newly_surfaced"] = serde_json::json!(auto_surface);
+        }
+        println!("{}", out);
     } else {
         println!("integrated  {}  → archive", resolved);
+        for y_id in &auto_surface {
+            println!("surfaced    {}  → ready (unblocked)", y_id);
+        }
     }
     Ok(())
 }

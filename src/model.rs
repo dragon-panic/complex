@@ -135,6 +135,25 @@ impl Graph {
         self.nodes.iter().filter(|n| !n.id.contains('.')).collect()
     }
 
+    /// Returns IDs of latent nodes that have no non-integrated blockers.
+    /// These are candidates for promotion to ready.
+    pub fn unblocked_latent_ids(&self) -> Vec<String> {
+        self.nodes
+            .iter()
+            .filter(|n| n.state == State::Latent)
+            .filter(|n| {
+                !self.edges.iter().any(|e| {
+                    e.to == n.id
+                        && e.edge_type == EdgeType::Blocks
+                        && self
+                            .get_node(&e.from)
+                            .map_or(false, |b| b.state != State::Integrated)
+                })
+            })
+            .map(|n| n.id.clone())
+            .collect()
+    }
+
     /// Returns true if adding a blocks edge from `from` to `to` would create a cycle.
     /// Uses DFS: a cycle exists if `from` is reachable from `to` via existing blocks edges.
     pub fn would_cycle(&self, from: &str, to: &str) -> bool {
