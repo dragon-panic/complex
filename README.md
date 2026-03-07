@@ -144,17 +144,20 @@ cx show bX7c         # node detail + body
 | `cx new <parent> <title>` | Create a child node |
 | `cx surface` | List ready nodes |
 | `cx surface <id>` | Promote latent → ready |
-| `cx claim <id>` | Claim a node (`--as <part>` or `$CX_PART`) |
+| `cx claim <id>` | Claim a ready node (`--as <part>` or `$CX_PART`) |
 | `cx unclaim <id>` | Release a claim → ready |
 | `cx integrate <id>` | Mark done, move to archive |
+| `cx rm <id>` | Remove/discard a node (not integrate) |
 | `cx shadow` | List shadowed nodes |
 | `cx shadow <id>` | Flag a node as shadowed |
 | `cx unshadow <id>` | Clear shadow flag |
 | `cx show <id>` | Node detail: title, body, edges, children |
 | `cx tree [id]` | Full hierarchy with states |
+| `cx find <query>` | Search nodes by title (case-insensitive) |
 | `cx list [--state <s>]` | All nodes, optionally filtered by state |
 | `cx parts` | Claimed nodes grouped by part |
-| `cx therapy` | Stale (claimed > 24h) and shadowed nodes |
+| `cx therapy` | Stale, shadowed, and orphan body files |
+| `cx rename <id> <title>` | Rename a node's title |
 | `cx edit <id>` | Open body in `$EDITOR` |
 | `cx block <a> <b>` | `a` blocks `b` — cycle-safe |
 | `cx unblock <a> <b>` | Remove a blocks edge |
@@ -191,6 +194,25 @@ useful for an orchestrator deciding where to intervene.
 `cx discover <new> <existing>` records that a task was found
 while working on another — preserving the reasoning chain in
 the graph without blocking anything.
+
+## Claude Code integration
+
+To let Claude Code run `cx` commands without prompting for approval each time,
+add these patterns to `~/.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(cx *)",
+      "Bash(cat <<*| cx *)"
+    ]
+  }
+}
+```
+
+The first pattern covers direct `cx` calls. The second covers heredoc pipes
+used to set issue bodies (e.g. `cat <<'BODY' | cx new <id> "title" --body -`).
 
 ## Why not markdown files?
 
