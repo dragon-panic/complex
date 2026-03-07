@@ -93,7 +93,9 @@ pub fn save(root: &Path, graph: &Graph) -> Result<()> {
 // ── issue bodies ──────────────────────────────────────────────────────────────
 
 pub fn write_body(root: &Path, id: &str, body: &str) -> Result<()> {
-    fs::write(root.join(ISSUES_DIR).join(format!("{}.md", id)), body)?;
+    let dir = root.join(ISSUES_DIR);
+    fs::create_dir_all(&dir)?;
+    fs::write(dir.join(format!("{}.md", id)), body)?;
     Ok(())
 }
 
