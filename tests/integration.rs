@@ -222,6 +222,28 @@ fn surface_list_shows_ready_nodes() {
 }
 
 #[test]
+fn surface_multiple_ids() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let root = add(&dir, "Root");
+    let c1 = new_child(&dir, &root, "Task A");
+    let c2 = new_child(&dir, &root, "Task B");
+
+    cx(&dir).args(["surface", &c1, &c2]).assert().success()
+        .stdout(contains("surfaced"))
+        .stdout(contains(&c1))
+        .stdout(contains(&c2));
+
+    let g = graph_json(&dir);
+    let nodes = g["nodes"].as_array().unwrap();
+    for n in nodes {
+        if n["id"] == c1 || n["id"] == c2 {
+            assert_eq!(n["state"], "ready");
+        }
+    }
+}
+
+#[test]
 fn surface_non_latent_fails() {
     let dir = TempDir::new().unwrap();
     init(&dir);
@@ -1048,4 +1070,206 @@ fn therapy_surfaces_stale_claimed_nodes() {
     cx(&dir).args(["therapy"]).assert().success()
         .stdout(contains("Stale Task"))
         .stdout(contains("stale"));
+}
+
+// ── cx rm ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn rm_removes_node() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Mistake");
+    cx(&dir).args(["rm", &id]).assert().success()
+        .stdout(contains("removed"));
+    let g = graph_json(&dir);
+    assert!(g["nodes"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn rm_refuses_with_active_children() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let root = add(&dir, "Parent");
+    let _child = new_child(&dir, &root, "Child");
+    cx(&dir).args(["rm", &root]).assert().failure()
+        .stderr(contains("active child"));
+}
+
+#[test]
+fn rm_cleans_up_edges() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let b = add(&dir, "B");
+    surface_id(&dir, &a);
+    surface_id(&dir, &b);
+    cx(&dir).args(["block", &a, &b]).assert().success();
+    cx(&dir).args(["rm", &a]).assert().success();
+    let g = graph_json(&dir);
+    assert!(g["edges"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn rm_removes_body_file() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "With Body");
+    let body_path = dir.path().join(format!(".complex/issues/{}.md", id));
+    std::fs::write(&body_path, "some content").unwrap();
+    cx(&dir).args(["rm", &id]).assert().success();
+    assert!(!body_path.exists());
+}
+
+#[test]
+fn rm_json_output() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "To Remove");
+    let out = cx(&dir).args(["--json", "rm", &id]).output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["removed"], true);
+}
+
+// ── cx find ───────────────────────────────────────────────────────────────
+
+#[test]
+fn find_matches_by_title() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    add(&dir, "Implement auth");
+    add(&dir, "Fix database bug");
+    add(&dir, "Auth middleware");
+
+    cx(&dir).args(["find", "auth"]).assert().success()
+        .stdout(contains("Implement auth"))
+        .stdout(contains("Auth middleware"));
+}
+
+#[test]
+fn find_case_insensitive() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    add(&dir, "JWT Token Handler");
+
+    cx(&dir).args(["find", "jwt"]).assert().success()
+        .stdout(contains("JWT Token Handler"));
+}
+
+#[test]
+fn find_no_results() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    add(&dir, "Something");
+
+    cx(&dir).args(["find", "nonexistent"]).assert().success()
+        .stdout(contains("no nodes matching"));
+}
+
+#[test]
+fn find_json_output() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Searchable Task");
+
+    let out = cx(&dir).args(["--json", "find", "searchable"]).output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v[0]["id"].as_str().unwrap(), id);
+}
+
+// ── claim state enforcement ──────────────────────────────────────────────
+
+#[test]
+fn claim_latent_fails() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Latent Task");
+    cx(&dir).args(["claim", &id, "--as", "agent"]).assert().failure()
+        .stderr(contains("latent"))
+        .stderr(contains("surface"));
+}
+
+// ── tree --json hierarchy ────────────────────────────────────────────────
+
+#[test]
+fn tree_json_is_hierarchical() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let root = add(&dir, "Root");
+    let _child = new_child(&dir, &root, "Child");
+
+    let out = cx(&dir).args(["--json", "tree"]).output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v[0]["title"], "Root");
+    assert_eq!(v[0]["children"][0]["title"], "Child");
+}
+
+#[test]
+fn tree_json_scoped() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let root = add(&dir, "Root");
+    let child = new_child(&dir, &root, "Child");
+    let _grandchild = new_child(&dir, &child, "Grandchild");
+
+    let out = cx(&dir).args(["--json", "tree", &child]).output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v[0]["title"], "Child");
+    assert_eq!(v[0]["children"][0]["title"], "Grandchild");
+}
+
+// ── orphan detection in therapy ──────────────────────────────────────────
+
+#[test]
+fn therapy_detects_orphan_body_files() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    // Create an orphan body file (no matching node)
+    std::fs::write(
+        dir.path().join(".complex/issues/FAKE.md"),
+        "orphan content",
+    ).unwrap();
+
+    cx(&dir).args(["therapy"]).assert().success()
+        .stdout(contains("FAKE"))
+        .stdout(contains("orphan"));
+}
+
+#[test]
+fn therapy_orphan_json() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    std::fs::write(
+        dir.path().join(".complex/issues/ZZZZ.md"),
+        "orphan",
+    ).unwrap();
+
+    let out = cx(&dir).args(["--json", "therapy"]).output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let orphan = v.as_array().unwrap().iter()
+        .find(|e| e["reason"] == "orphan")
+        .unwrap();
+    assert_eq!(orphan["id"], "ZZZZ");
+}
+
+// ── edge validation ──────────────────────────────────────────────────────
+
+#[test]
+fn block_nonexistent_node_fails() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Real Node");
+    cx(&dir).args(["block", &id, "FAKE"]).assert().failure();
+}
+
+#[test]
+fn relate_nonexistent_node_fails() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Real Node");
+    cx(&dir).args(["relate", &id, "NOPE"]).assert().failure();
 }

@@ -40,10 +40,10 @@ enum Commands {
         body: Option<String>,
     },
 
-    /// List ready nodes, or promote a latent node to ready
+    /// List ready nodes, or promote latent nodes to ready
     Surface {
-        id: Option<String>,
-        /// Why this node is being surfaced
+        ids: Vec<String>,
+        /// Why these nodes are being surfaced
         #[arg(long)]
         reason: Option<String>,
     },
@@ -102,6 +102,14 @@ enum Commands {
     /// Show stale or stuck nodes needing review
     Therapy,
 
+    /// Remove a node (discard, not integrate)
+    Rm {
+        id: String,
+        /// Why this node is being removed
+        #[arg(long)]
+        reason: Option<String>,
+    },
+
     /// Rename a node's title
     Rename {
         id: String,
@@ -133,6 +141,11 @@ enum Commands {
 
     /// Mark node A as discovered while working on node B
     Discover { a: String, b: String },
+
+    /// Search nodes by title (case-insensitive substring match)
+    Find {
+        query: Vec<String>,
+    },
 
     /// List all nodes, optionally filtered by state
     List {
@@ -173,7 +186,7 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Init => cmd_init(),
         Commands::Add { title, body } => cmd_add(title.join(" "), body, cli.json),
         Commands::New { parent_id, title, body } => cmd_new(parent_id, title.join(" "), body, cli.json),
-        Commands::Surface { id, reason } => cmd_surface(id, reason, cli.json),
+        Commands::Surface { ids, reason } => cmd_surface(ids, reason, cli.json),
         Commands::Claim { id, r#as, reason } => cmd_claim(id, r#as, reason, cli.json),
         Commands::Unclaim { id, reason } => cmd_unclaim(id, reason, cli.json),
         Commands::Integrate { id, reason } => cmd_integrate(id, reason, cli.json),
@@ -183,12 +196,14 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Tree { id } => cmd_tree(id, cli.json),
         Commands::Parts => cmd_parts(cli.json),
         Commands::Therapy => cmd_therapy(cli.json),
+        Commands::Rm { id, reason } => cmd_rm(id, reason, cli.json),
         Commands::Rename { id, title } => cmd_rename(id, title.join(" "), cli.json),
         Commands::Edit { id, body, file, editor } => cmd_edit(id, body, file, editor),
         Commands::Block { a, b } => cmd_edge(a, b, EdgeType::Blocks, false, cli.json),
         Commands::Unblock { a, b } => cmd_edge(a, b, EdgeType::Blocks, true, cli.json),
         Commands::Relate { a, b } => cmd_edge(a, b, EdgeType::Related, false, cli.json),
         Commands::Discover { a, b } => cmd_edge(a, b, EdgeType::DiscoveredFrom, false, cli.json),
+        Commands::Find { query } => cmd_find(query.join(" "), cli.json),
         Commands::List { state } => cmd_list(state, cli.json),
         Commands::Agent => { print!("{}", AGENT_GUIDE); Ok(()) },
         Commands::Meta { id, value } => cmd_meta(id, value, cli.json),
@@ -257,19 +272,21 @@ ordering. Run `cx surface` at any time — it only shows tasks with no open bloc
 
 ```
 cx surface --json                 ready tasks (no open blockers)
-cx claim <id> --as <name>         take ownership (or set CX_PART env var)
+cx claim <id> --as <name>         take ownership (requires ready state)
 cx unclaim <id>                   release if you cannot complete it
 cx integrate <id>                 mark done → archive, unblocks dependents
+cx rm <id>                        remove/discard a node (not integrate)
 cx new <parent-id> <title>        create a child task under a parent
 cx add <title> --body "markdown"  create with body in one shot (also works on cx new)
 cx discover <new-id> <source-id>  record task found while working on source
+cx find <query>                   search nodes by title (case-insensitive)
 cx rename <id> <new title>        rename a node
 cx shadow <id>                    flag as blocked/stuck
 cx edit <id> --body "markdown"    update body non-interactively (or pipe: echo "md" | cx edit <id>)
 cx show <id> --json               full node detail: state, edges, body, children
-cx tree --json                    full hierarchy with states
+cx tree --json                    full hierarchy with states (nested children)
 cx parts --json                   what each part currently holds
-cx therapy --json                 stale (claimed >24h) and shadowed nodes
+cx therapy --json                 stale (claimed >24h), shadowed, and orphan body files
 cx list --state claimed --json    all nodes in a given state
 ```
 
@@ -297,6 +314,9 @@ latent → ready → claimed → integrated
                     ↕
                  shadowed  (flag — orthogonal to state)
 ```
+
+**Important:** `cx claim` only works on `ready` nodes. You must `cx surface <id>`
+a latent node before claiming it.
 
 ## IDs
 
@@ -384,33 +404,34 @@ fn cmd_new(parent_partial: String, title: String, body: Option<String>, json: bo
 
 // ── surface ───────────────────────────────────────────────────────────────────
 
-fn cmd_surface(id: Option<String>, reason: Option<String>, json: bool) -> Result<()> {
+fn cmd_surface(ids: Vec<String>, reason: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
 
-    match id {
-        None => {
-            let graph = store::load(&root)?;
-            let conn = db::materialize(&graph)?;
-            let nodes = db::ready_nodes(&conn)?;
+    if ids.is_empty() {
+        let graph = store::load(&root)?;
+        let conn = db::materialize(&graph)?;
+        let nodes = db::ready_nodes(&conn)?;
 
-            if json {
-                let out: Vec<_> = nodes
-                    .iter()
-                    .map(|n| serde_json::json!({ "id": n.id, "title": n.title, "part": n.part }))
-                    .collect();
-                println!("{}", serde_json::to_string_pretty(&out)?);
-            } else if nodes.is_empty() {
-                println!("no ready nodes");
-            } else {
-                for n in &nodes {
-                    let part = n.part.as_deref().unwrap_or("—");
-                    println!("{:<20}  {:<40}  {}", n.id, n.title, part);
-                }
+        if json {
+            let out: Vec<_> = nodes
+                .iter()
+                .map(|n| serde_json::json!({ "id": n.id, "title": n.title, "part": n.part }))
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&out)?);
+        } else if nodes.is_empty() {
+            println!("no ready nodes");
+        } else {
+            for n in &nodes {
+                let part = n.part.as_deref().unwrap_or("—");
+                println!("{:<20}  {:<40}  {}", n.id, n.title, part);
             }
         }
-        Some(partial) => {
-            let mut graph = store::load(&root)?;
-            let resolved = id::resolve(&graph, &partial)?;
+    } else {
+        let mut graph = store::load(&root)?;
+        let mut results = Vec::new();
+
+        for partial in &ids {
+            let resolved = id::resolve(&graph, partial)?;
             let node = graph
                 .get_node_mut(&resolved)
                 .ok_or_else(|| anyhow::anyhow!("node not found: {}", resolved))?;
@@ -423,13 +444,18 @@ fn cmd_surface(id: Option<String>, reason: Option<String>, json: bool) -> Result
             if let Some(r) = &reason {
                 set_reason(node, r);
             }
-            store::save(&root, &graph)?;
             emit(&root, "surface", &resolved, None, None, reason.as_deref());
+            results.push(resolved);
+        }
 
-            if json {
-                println!("{}", serde_json::json!({ "id": resolved, "state": "ready" }));
-            } else {
-                println!("surfaced  {}  → ready", resolved);
+        store::save(&root, &graph)?;
+
+        if json {
+            let out: Vec<_> = results.iter().map(|id| serde_json::json!({ "id": id, "state": "ready" })).collect();
+            println!("{}", serde_json::to_string_pretty(&out)?);
+        } else {
+            for id in &results {
+                println!("surfaced  {}  → ready", id);
             }
         }
     }
@@ -460,6 +486,9 @@ fn cmd_claim(partial: String, as_part: Option<String>, reason: Option<String>, j
     }
     if node.state == State::Integrated {
         bail!("{} is already integrated", resolved);
+    }
+    if node.state == State::Latent {
+        bail!("{} is latent — surface it first with: cx surface {}", resolved, resolved);
     }
 
     node.state = State::Claimed;
@@ -728,7 +757,38 @@ fn cmd_tree(root_id: Option<String>, json: bool) -> Result<()> {
     let graph = store::load(&root)?;
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&graph.nodes)?);
+        fn node_to_tree(graph: &model::Graph, node: &model::Node) -> serde_json::Value {
+            let mut children = graph.children(&node.id);
+            children.sort_by(|a, b| a.id.cmp(&b.id));
+            let child_trees: Vec<serde_json::Value> = children
+                .iter()
+                .map(|c| node_to_tree(graph, c))
+                .collect();
+            serde_json::json!({
+                "id": node.id,
+                "title": node.title,
+                "state": node.state.to_string(),
+                "shadowed": node.shadowed,
+                "part": node.part,
+                "children": child_trees,
+            })
+        }
+
+        let tree_roots: Vec<&model::Node> = match &root_id {
+            Some(partial) => {
+                let resolved = id::resolve(&graph, partial)?;
+                vec![graph
+                    .get_node(&resolved)
+                    .ok_or_else(|| anyhow::anyhow!("node not found: {}", resolved))?]
+            }
+            None => graph.roots(),
+        };
+
+        let out: Vec<serde_json::Value> = tree_roots
+            .iter()
+            .map(|r| node_to_tree(&graph, r))
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(());
     }
 
@@ -804,8 +864,11 @@ fn cmd_therapy(json: bool) -> Result<()> {
     let conn = db::materialize(&graph)?;
     let nodes = db::therapy_nodes(&conn)?;
 
+    // Detect orphan body files (*.md in issues/ with no matching node)
+    let orphans = store::find_orphan_bodies(&root, &graph)?;
+
     if json {
-        let out: Vec<_> = nodes
+        let mut out: Vec<_> = nodes
             .iter()
             .map(|n| {
                 let user_reason = graph.get_node(&n.id)
@@ -822,8 +885,14 @@ fn cmd_therapy(json: bool) -> Result<()> {
                 obj
             })
             .collect();
+        for path in &orphans {
+            out.push(serde_json::json!({
+                "id": path, "title": "(orphan body file)",
+                "reason": "orphan"
+            }));
+        }
         println!("{}", serde_json::to_string_pretty(&out)?);
-    } else if nodes.is_empty() {
+    } else if nodes.is_empty() && orphans.is_empty() {
         println!("all clear");
     } else {
         for n in &nodes {
@@ -842,6 +911,59 @@ fn cmd_therapy(json: bool) -> Result<()> {
                 ),
             }
         }
+        for path in &orphans {
+            println!("{:<20}  {:<40}  {:<20}  orphan", path, "(body file)", "—");
+        }
+    }
+    Ok(())
+}
+
+// ── rm ────────────────────────────────────────────────────────────────────
+
+fn cmd_rm(partial: String, reason: Option<String>, json: bool) -> Result<()> {
+    let root = store::find_root()?;
+    let mut graph = store::load(&root)?;
+    let resolved = id::resolve(&graph, &partial)?;
+
+    // Refuse to remove nodes with active children
+    let active_children: Vec<&str> = graph
+        .children(&resolved)
+        .into_iter()
+        .filter(|n| n.state != State::Integrated)
+        .map(|n| n.id.as_str())
+        .collect();
+    if !active_children.is_empty() {
+        bail!(
+            "{} has {} active child(ren): {} — remove them first",
+            resolved,
+            active_children.len(),
+            active_children.join(", ")
+        );
+    }
+
+    let title = graph
+        .get_node(&resolved)
+        .map(|n| n.title.clone())
+        .unwrap_or_default();
+
+    // Remove the node
+    graph.nodes.retain(|n| n.id != resolved);
+    // Remove edges referencing it
+    graph.edges.retain(|e| e.from != resolved && e.to != resolved);
+    store::save(&root, &graph)?;
+
+    // Remove body file if present
+    let body_path = root.join("issues").join(format!("{}.md", resolved));
+    if body_path.exists() {
+        std::fs::remove_file(body_path)?;
+    }
+
+    emit(&root, "rm", &resolved, None, Some(&title), reason.as_deref());
+
+    if json {
+        println!("{}", serde_json::json!({ "id": resolved, "removed": true }));
+    } else {
+        println!("removed  {}  {}", resolved, title);
     }
     Ok(())
 }
@@ -924,6 +1046,14 @@ fn cmd_edge(
     let a = id::resolve(&graph, &a_partial)?;
     let b = id::resolve(&graph, &b_partial)?;
 
+    // Validate both endpoints exist
+    if graph.get_node(&a).is_none() {
+        bail!("node not found: {}", a);
+    }
+    if graph.get_node(&b).is_none() {
+        bail!("node not found: {}", b);
+    }
+
     // Cycle check for blocks edges
     if !remove && edge_type == EdgeType::Blocks && graph.would_cycle(&a, &b) {
         bail!("adding {} --blocks→ {} would create a cycle", a, b);
@@ -962,6 +1092,41 @@ fn cmd_edge(
             );
         } else {
             println!("added  {} --{}→ {}", a, edge_type, b);
+        }
+    }
+    Ok(())
+}
+
+// ── find ──────────────────────────────────────────────────────────────────
+
+fn cmd_find(query: String, json: bool) -> Result<()> {
+    let root = store::find_root()?;
+    let graph = store::load(&root)?;
+    let q = query.to_lowercase();
+
+    let matches: Vec<&model::Node> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.title.to_lowercase().contains(&q))
+        .collect();
+
+    if json {
+        let out: Vec<_> = matches
+            .iter()
+            .map(|n| {
+                serde_json::json!({
+                    "id": n.id, "title": n.title,
+                    "state": n.state.to_string(), "part": n.part,
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&out)?);
+    } else if matches.is_empty() {
+        println!("no nodes matching '{}'", query);
+    } else {
+        for n in &matches {
+            let part = n.part.as_deref().unwrap_or("—");
+            println!("{:<20}  {:<40}  {:<12}  {}", n.id, n.title, n.state, part);
         }
     }
     Ok(())
