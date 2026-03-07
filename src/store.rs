@@ -1,9 +1,10 @@
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write as IoWrite;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
+use fs2::FileExt;
 
 use crate::model::{Graph, Node};
 
@@ -68,10 +69,14 @@ pub fn load(root: &Path) -> Result<Graph> {
 }
 
 pub fn save(root: &Path, graph: &Graph) -> Result<()> {
+    let lock_path = root.join("graph.lock");
+    let lock_file = File::create(&lock_path)?;
+    lock_file.lock_exclusive().context("acquiring graph.lock")?;
+
     let graph_path = root.join(GRAPH_FILE);
     let tmp = root.join("graph.json.tmp");
     let json = serde_json::to_string_pretty(graph)?;
-    fs::write(&tmp, json)?;
+    fs::write(&tmp, &json)?;
     fs::rename(&tmp, &graph_path)?;
 
     let issues = root.join(ISSUES_DIR);
@@ -81,6 +86,7 @@ pub fn save(root: &Path, graph: &Graph) -> Result<()> {
         }
     }
 
+    lock_file.unlock()?;
     Ok(())
 }
 
@@ -233,6 +239,28 @@ fn save_agents(root: &Path, agents: &[AgentEntry]) -> Result<()> {
         serde_json::to_string_pretty(agents)?,
     )?;
     Ok(())
+}
+
+// ── orphan detection ──────────────────────────────────────────────────────
+
+/// Find .md files in issues/ that don't correspond to any node in the graph.
+pub fn find_orphan_bodies(root: &Path, graph: &Graph) -> Result<Vec<String>> {
+    let issues = root.join(ISSUES_DIR);
+    if !issues.exists() {
+        return Ok(vec![]);
+    }
+    let mut orphans = vec![];
+    for entry in fs::read_dir(&issues)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if let Some(id) = name.strip_suffix(".md")
+            && graph.get_node(id).is_none()
+        {
+            orphans.push(id.to_string());
+        }
+    }
+    orphans.sort();
+    Ok(orphans)
 }
 
 // ── rotation ──────────────────────────────────────────────────────────────────

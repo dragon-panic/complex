@@ -13,14 +13,6 @@ pub fn generate(parent: Option<&str>) -> String {
     }
 }
 
-pub fn parent_of(id: &str) -> Option<&str> {
-    id.rfind('.').map(|i| &id[..i])
-}
-
-pub fn depth(id: &str) -> usize {
-    id.chars().filter(|&c| c == '.').count()
-}
-
 /// Resolve a possibly-short id (leaf segment) to a full id.
 /// Exact match wins. Otherwise matches any node whose id ends with ".<partial>".
 pub fn resolve(graph: &Graph, partial: &str) -> Result<String> {
