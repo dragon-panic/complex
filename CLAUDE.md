@@ -2,7 +2,10 @@
 
 ## Install after verify
 
-This project IS the `cx` tool. After tests and clippy pass (step 7), run:
+This project IS the `cx` tool. The verify → install → commit → push steps
+should flow without pausing between them once the user has approved the work.
+
+After tests and clippy pass (step 7), run:
 
 ```
 cargo install --path .
