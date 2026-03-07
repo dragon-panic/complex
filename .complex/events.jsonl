@@ -4,3 +4,39 @@
 {"ts":"2026-03-01T16:47:38.047973337+00:00","action":"integrate","node_id":"ISqr.x4CO"}
 {"ts":"2026-03-01T16:49:41.507657097+00:00","action":"claim","node_id":"JMpv.4cmQ","part":"claude"}
 {"ts":"2026-03-01T16:51:15.447044613+00:00","action":"integrate","node_id":"JMpv.4cmQ"}
+{"ts":"2026-03-07T19:51:42.266386386+00:00","action":"create","node_id":"JMpv.vJdi","detail":"test child"}
+{"ts":"2026-03-07T19:51:46.303633039+00:00","action":"integrate","node_id":"JMpv.vJdi","reason":"test node, cleaning up"}
+{"ts":"2026-03-07T19:56:42.098431099+00:00","action":"create","node_id":"JMpv.8cJK","detail":"Enforce state transitions on claim"}
+{"ts":"2026-03-07T19:56:42.099600307+00:00","action":"create","node_id":"JMpv.ihnS","detail":"Validate edge endpoints exist"}
+{"ts":"2026-03-07T19:56:42.100816963+00:00","action":"create","node_id":"JMpv.zFkc","detail":"Add cx rm command"}
+{"ts":"2026-03-07T19:56:42.102129696+00:00","action":"create","node_id":"JMpv.m71c","detail":"Add cx find title search"}
+{"ts":"2026-03-07T19:56:42.103497227+00:00","action":"create","node_id":"JMpv.UBLS","detail":"Hierarchical cx tree --json"}
+{"ts":"2026-03-07T19:56:42.104699353+00:00","action":"create","node_id":"JMpv.BoO6","detail":"File locking on graph.json writes"}
+{"ts":"2026-03-07T19:56:42.105988977+00:00","action":"create","node_id":"JMpv.FykS","detail":"Orphan detection in cx therapy"}
+{"ts":"2026-03-07T19:56:42.107391676+00:00","action":"create","node_id":"JMpv.wQtF","detail":"Integration tests for recent features"}
+{"ts":"2026-03-07T19:56:45.541464131+00:00","action":"surface","node_id":"JMpv.8cJK"}
+{"ts":"2026-03-07T19:56:45.542614540+00:00","action":"surface","node_id":"JMpv.ihnS"}
+{"ts":"2026-03-07T19:56:45.543762529+00:00","action":"surface","node_id":"JMpv.zFkc"}
+{"ts":"2026-03-07T19:56:45.544873149+00:00","action":"surface","node_id":"JMpv.m71c"}
+{"ts":"2026-03-07T19:56:45.546443812+00:00","action":"surface","node_id":"JMpv.UBLS"}
+{"ts":"2026-03-07T19:56:45.547897340+00:00","action":"surface","node_id":"JMpv.BoO6"}
+{"ts":"2026-03-07T19:56:45.549180863+00:00","action":"surface","node_id":"JMpv.FykS"}
+{"ts":"2026-03-07T19:56:45.550293563+00:00","action":"surface","node_id":"JMpv.wQtF"}
+{"ts":"2026-03-07T19:56:45.551591016+00:00","action":"surface","node_id":"JMpv"}
+{"ts":"2026-03-07T19:56:48.587133631+00:00","action":"claim","node_id":"JMpv.8cJK","part":"claude"}
+{"ts":"2026-03-07T19:56:48.588552090+00:00","action":"claim","node_id":"JMpv.ihnS","part":"claude"}
+{"ts":"2026-03-07T19:56:48.589778916+00:00","action":"claim","node_id":"JMpv.zFkc","part":"claude"}
+{"ts":"2026-03-07T20:05:20.801147628+00:00","action":"integrate","node_id":"JMpv.8cJK","reason":"claim now rejects latent nodes"}
+{"ts":"2026-03-07T20:05:20.802643553+00:00","action":"integrate","node_id":"JMpv.ihnS","reason":"edge endpoints validated before creation"}
+{"ts":"2026-03-07T20:05:20.803850299+00:00","action":"integrate","node_id":"JMpv.zFkc","reason":"cx rm command implemented with child protection"}
+{"ts":"2026-03-07T20:05:24.484720103+00:00","action":"claim","node_id":"JMpv.m71c","part":"claude"}
+{"ts":"2026-03-07T20:05:24.485924829+00:00","action":"claim","node_id":"JMpv.UBLS","part":"claude"}
+{"ts":"2026-03-07T20:05:24.487133855+00:00","action":"claim","node_id":"JMpv.BoO6","part":"claude"}
+{"ts":"2026-03-07T20:07:45.705741095+00:00","action":"integrate","node_id":"JMpv.m71c","reason":"cx find with case-insensitive substring search"}
+{"ts":"2026-03-07T20:07:45.707214321+00:00","action":"integrate","node_id":"JMpv.UBLS","reason":"tree --json now outputs hierarchical structure with children arrays"}
+{"ts":"2026-03-07T20:07:45.708628969+00:00","action":"integrate","node_id":"JMpv.BoO6","reason":"fs2 advisory lock on graph.json during save"}
+{"ts":"2026-03-07T20:07:48.913643201+00:00","action":"claim","node_id":"JMpv.FykS","part":"claude"}
+{"ts":"2026-03-07T20:07:48.914846227+00:00","action":"claim","node_id":"JMpv.wQtF","part":"claude"}
+{"ts":"2026-03-07T20:08:54.202464540+00:00","action":"integrate","node_id":"JMpv.FykS","reason":"therapy now detects orphan .md files in issues/"}
+{"ts":"2026-03-07T20:08:54.203863629+00:00","action":"integrate","node_id":"JMpv.wQtF","reason":"16 new integration tests: rm, find, claim enforcement, tree --json hierarchy, orphan detection, edge validation"}
+{"ts":"2026-03-07T21:39:36.763957012+00:00","action":"integrate","node_id":"JMpv","reason":"all 8 subtasks integrated: rm, find, claim enforcement, tree --json, file locking, orphan detection, edge validation, tests"}

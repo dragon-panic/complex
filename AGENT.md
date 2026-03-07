@@ -21,19 +21,21 @@ ordering. Run `cx surface` at any time — it only shows tasks with no open bloc
 
 ```
 cx surface --json                 ready tasks (no open blockers)
-cx claim <id> --as <name>         take ownership (or set CX_PART env var)
+cx claim <id> --as <name>         take ownership (requires ready state)
 cx unclaim <id>                   release if you cannot complete it
 cx integrate <id>                 mark done → archive, unblocks dependents
+cx rm <id>                        remove/discard a node (not integrate)
 cx new <parent-id> <title>        create a child task under a parent
 cx add <title> --body "markdown"  create with body in one shot (also works on cx new)
 cx discover <new-id> <source-id>  record task found while working on source
+cx find <query>                   search nodes by title (case-insensitive)
 cx rename <id> <new title>        rename a node
 cx shadow <id>                    flag as blocked/stuck
 cx edit <id> --body "markdown"    update body non-interactively (or pipe: echo "md" | cx edit <id>)
 cx show <id> --json               full node detail: state, edges, body, children
-cx tree --json                    full hierarchy with states
+cx tree --json                    full hierarchy with states (nested children)
 cx parts --json                   what each part currently holds
-cx therapy --json                 stale (claimed >24h) and shadowed nodes
+cx therapy --json                 stale (claimed >24h), shadowed, and orphan body files
 cx list --state claimed --json    all nodes in a given state
 ```
 
@@ -44,6 +46,9 @@ latent → ready → claimed → integrated
                     ↕
                  shadowed  (flag — orthogonal to state)
 ```
+
+**Important:** `cx claim` only works on `ready` nodes. You must `cx surface <id>`
+a latent node before claiming it.
 
 ## IDs
 

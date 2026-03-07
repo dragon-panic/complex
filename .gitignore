@@ -1,2 +1,3 @@
 /target
 .complex/graph.json.tmp
+.complex/graph.lock
