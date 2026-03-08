@@ -1036,6 +1036,7 @@ fn cmd_edit(partial: String, body: Option<String>, file: Option<String>, force_e
 
     if updated != existing {
         store::write_body(&root, &resolved, &updated)?;
+        emit(&root, "edit", &resolved, None, None, None);
         println!("saved  {}", resolved);
     } else {
         println!("no changes");

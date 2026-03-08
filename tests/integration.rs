@@ -1001,6 +1001,24 @@ fn edit_body_and_file_conflict() {
         .assert().failure();
 }
 
+#[test]
+fn edit_emits_event() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Evented edit");
+
+    cx(&dir).args(["edit", &id, "--body", "New body"])
+        .assert().success().stdout(contains("saved"));
+
+    let events_raw = std::fs::read_to_string(dir.path().join(".complex/events.jsonl")).unwrap();
+    let edit_event: serde_json::Value = events_raw
+        .lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .find(|e: &serde_json::Value| e["action"] == "edit")
+        .expect("expected an 'edit' event in events.jsonl");
+    assert_eq!(edit_event["node_id"], id);
+}
+
 // ── cx --reason flag ──────────────────────────────────────────────────────────
 
 #[test]
