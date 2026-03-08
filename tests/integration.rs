@@ -1711,3 +1711,93 @@ fn show_text_displays_filed_by() {
     cx(&dir).args(["show", id]).assert().success()
         .stdout(contains("filed by: ox:seguro"));
 }
+
+// ── block propagation to children ────────────────────────────────────────────
+
+#[test]
+fn blocked_parent_hides_children_from_surface() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let blocker = add(&dir, "Blocker");
+    let parent = add(&dir, "Parent");
+    let child = new_child(&dir, &parent, "Child");
+    surface_id(&dir, &parent);
+    surface_id(&dir, &child);
+
+    // Block the parent on the blocker
+    cx(&dir).args(["block", &blocker, &parent]).assert().success();
+
+    // Surface (ready list) should not show child
+    let out = cx(&dir).args(["--json", "surface"]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ids: Vec<&str> = v.as_array().unwrap().iter()
+        .map(|n| n["id"].as_str().unwrap())
+        .collect();
+    assert!(!ids.contains(&child.as_str()), "child of blocked parent should not appear in surface");
+    assert!(!ids.contains(&parent.as_str()), "blocked parent should not appear in surface");
+}
+
+#[test]
+fn blocked_grandparent_hides_grandchildren_from_surface() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let blocker = add(&dir, "Blocker");
+    let gp = add(&dir, "Grandparent");
+    let parent = new_child(&dir, &gp, "Parent");
+    let child = new_child(&dir, &parent, "Child");
+    surface_id(&dir, &gp);
+    surface_id(&dir, &parent);
+    surface_id(&dir, &child);
+
+    cx(&dir).args(["block", &blocker, &gp]).assert().success();
+
+    let out = cx(&dir).args(["--json", "surface"]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ids: Vec<&str> = v.as_array().unwrap().iter()
+        .map(|n| n["id"].as_str().unwrap())
+        .collect();
+    assert!(!ids.contains(&child.as_str()), "grandchild of blocked grandparent should not appear in surface");
+}
+
+#[test]
+fn claim_child_of_blocked_parent_fails() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let blocker = add(&dir, "Blocker");
+    let parent = add(&dir, "Parent");
+    let child = new_child(&dir, &parent, "Child");
+    surface_id(&dir, &parent);
+    surface_id(&dir, &child);
+
+    cx(&dir).args(["block", &blocker, &parent]).assert().success();
+
+    cx(&dir).args(["claim", &child, "--as", "agent"])
+        .assert()
+        .failure()
+        .stderr(contains("blocked"));
+}
+
+#[test]
+fn unblocked_parent_children_reappear_in_surface() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let blocker = add(&dir, "Blocker");
+    let parent = add(&dir, "Parent");
+    let child = new_child(&dir, &parent, "Child");
+    surface_id(&dir, &parent);
+    surface_id(&dir, &child);
+
+    cx(&dir).args(["block", &blocker, &parent]).assert().success();
+
+    // Integrate the blocker to unblock
+    surface_id(&dir, &blocker);
+    claim(&dir, &blocker, "agent");
+    integrate(&dir, &blocker);
+
+    let out = cx(&dir).args(["--json", "surface"]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ids: Vec<&str> = v.as_array().unwrap().iter()
+        .map(|n| n["id"].as_str().unwrap())
+        .collect();
+    assert!(ids.contains(&child.as_str()), "child should reappear after parent is unblocked");
+}

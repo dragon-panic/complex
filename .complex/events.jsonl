@@ -63,3 +63,11 @@
 {"ts":"2026-03-08T17:33:30.266085583+00:00","action":"surface","node_id":"hPKU"}
 {"ts":"2026-03-08T17:33:30.267525242+00:00","action":"claim","node_id":"hPKU","part":"claude"}
 {"ts":"2026-03-08T17:38:23.346548726+00:00","action":"integrate","node_id":"hPKU","reason":"implemented filed_by — all 109 tests pass, clippy clean"}
+{"ts":"2026-03-08T17:40:05.846746609+00:00","action":"create","node_id":"NYSO","detail":"test filed_by"}
+{"ts":"2026-03-08T17:40:08.712691115+00:00","action":"rm","node_id":"NYSO","detail":"test filed_by"}
+{"ts":"2026-03-08T22:40:16.215158396+00:00","action":"create","node_id":"mDmw","detail":"cx claim silently succeeds on nonexistent task IDs"}
+{"ts":"2026-03-08T22:48:01.244936942+00:00","action":"rm","node_id":"mDmw","detail":"cx claim silently succeeds on nonexistent task IDs","reason":"not reproducible — id::resolve correctly errors on nonexistent IDs; likely caused by concurrent write race in the caller's environment, not a cx bug"}
+{"ts":"2026-03-08T23:05:11.485993269+00:00","action":"create","node_id":"AY37","detail":"Block edges don't propagate to children of blocked parent"}
+{"ts":"2026-03-08T23:07:58.308549122+00:00","action":"surface","node_id":"AY37"}
+{"ts":"2026-03-08T23:07:58.310338614+00:00","action":"claim","node_id":"AY37","part":"claude"}
+{"ts":"2026-03-08T23:09:45.629848935+00:00","action":"integrate","node_id":"AY37","reason":"block edges now propagate to children — fixed in db::ready_nodes SQL and cmd_claim"}

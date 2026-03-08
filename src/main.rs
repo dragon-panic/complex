@@ -270,6 +270,33 @@ fn set_reason(node: &mut model::Node, reason: &str) {
     }
 }
 
+/// Returns the ID of the first ancestor (or self) that has an unresolved blocker,
+/// or None if the node is unblocked.
+fn ancestor_blocker(graph: &model::Graph, id: &str) -> Option<String> {
+    // Collect self + all ancestor IDs from the dot-separated hierarchy
+    let mut ancestors = vec![id.to_string()];
+    let mut cur = id.to_string();
+    while let Some(dot) = cur.rfind('.') {
+        cur = cur[..dot].to_string();
+        ancestors.push(cur.clone());
+    }
+
+    for ancestor in &ancestors {
+        let has_blocker = graph.edges.iter().any(|e| {
+            e.to == *ancestor
+                && e.edge_type == model::EdgeType::Blocks
+                && graph
+                    .get_node(&e.from)
+                    .map(|n| n.state != model::State::Integrated)
+                    .unwrap_or(false)
+        });
+        if has_blocker {
+            return Some(ancestor.clone());
+        }
+    }
+    None
+}
+
 // ── agent guide ──────────────────────────────────────────────────────────────
 
 const AGENT_GUIDE: &str = r#"# complex — agent guide
@@ -539,24 +566,35 @@ fn cmd_claim(partial: String, as_part: Option<String>, reason: Option<String>, j
         .or_else(|| std::env::var("CX_PART").ok())
         .unwrap_or_else(|| "unknown".to_string());
 
+    // Validate state with immutable borrow first
+    {
+        let node = graph
+            .get_node(&resolved)
+            .ok_or_else(|| anyhow::anyhow!("node not found: {}", resolved))?;
+
+        if node.state == State::Claimed {
+            bail!(
+                "{} is already claimed by {}",
+                resolved,
+                node.part.as_deref().unwrap_or("unknown")
+            );
+        }
+        if node.state == State::Integrated {
+            bail!("{} is already integrated", resolved);
+        }
+        if node.state == State::Latent {
+            bail!("{} is latent — surface it first with: cx surface {}", resolved, resolved);
+        }
+    }
+
+    // Check if this node or any ancestor is blocked
+    if let Some(blocker) = ancestor_blocker(&graph, &resolved) {
+        bail!("{} is blocked — ancestor {} has unresolved blockers", resolved, blocker);
+    }
+
     let node = graph
         .get_node_mut(&resolved)
         .ok_or_else(|| anyhow::anyhow!("node not found: {}", resolved))?;
-
-    if node.state == State::Claimed {
-        bail!(
-            "{} is already claimed by {}",
-            resolved,
-            node.part.as_deref().unwrap_or("unknown")
-        );
-    }
-    if node.state == State::Integrated {
-        bail!("{} is already integrated", resolved);
-    }
-    if node.state == State::Latent {
-        bail!("{} is latent — surface it first with: cx surface {}", resolved, resolved);
-    }
-
     node.state = State::Claimed;
     node.part = Some(part.clone());
     node.touch();

@@ -66,7 +66,8 @@ pub fn ready_nodes(conn: &Connection) -> Result<Vec<ReadyNode>> {
            AND NOT EXISTS (
                SELECT 1 FROM edges e
                JOIN nodes b ON e.from_id = b.id
-               WHERE e.to_id = nodes.id
+               JOIN nodes ancestor ON e.to_id = ancestor.id
+               WHERE (nodes.id = ancestor.id OR nodes.id LIKE ancestor.id || '.%')
                  AND e.type = 'blocks'
                  AND b.state != 'integrated'
            )
