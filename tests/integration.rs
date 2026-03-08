@@ -876,6 +876,58 @@ fn add_with_body_stdin_reads_piped_input() {
     assert_eq!(s["body"], "Body from stdin pipe");
 }
 
+// ── add/new --body-file ──────────────────────────────────────────────────────
+
+#[test]
+fn add_with_body_file() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let body_file = dir.path().join("body.md");
+    std::fs::write(&body_file, "# Spec\n\nDetails here.").unwrap();
+
+    let out = cx(&dir)
+        .args(["--json", "add", "From file", "--body-file", body_file.to_str().unwrap()])
+        .output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let id = v["id"].as_str().unwrap();
+
+    let show = cx(&dir).args(["--json", "show", id]).output().unwrap();
+    let s: serde_json::Value = serde_json::from_slice(&show.stdout).unwrap();
+    assert_eq!(s["body"], "# Spec\n\nDetails here.");
+}
+
+#[test]
+fn new_with_body_file() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let parent = add(&dir, "Parent");
+    let body_file = dir.path().join("child-body.md");
+    std::fs::write(&body_file, "Child body from file").unwrap();
+
+    let out = cx(&dir)
+        .args(["--json", "new", &parent, "Child", "--body-file", body_file.to_str().unwrap()])
+        .output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let id = v["id"].as_str().unwrap();
+
+    let show = cx(&dir).args(["--json", "show", id]).output().unwrap();
+    let s: serde_json::Value = serde_json::from_slice(&show.stdout).unwrap();
+    assert_eq!(s["body"], "Child body from file");
+}
+
+#[test]
+fn add_body_and_body_file_conflict() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let body_file = dir.path().join("body.md");
+    std::fs::write(&body_file, "content").unwrap();
+
+    cx(&dir).args(["add", "Conflict", "--body", "inline", "--body-file", body_file.to_str().unwrap()])
+        .assert().failure();
+}
+
 // ── cx edit (non-interactive) ─────────────────────────────────────────────────
 
 #[test]

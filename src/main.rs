@@ -27,8 +27,11 @@ enum Commands {
     Add {
         title: Vec<String>,
         /// Set body inline, or pipe stdin (e.g. echo "md" | cx add "title" --body -)
-        #[arg(long)]
+        #[arg(long, conflicts_with = "body_file")]
         body: Option<String>,
+        /// Read body from a file path
+        #[arg(long = "body-file", short = 'F', conflicts_with = "body")]
+        body_file: Option<String>,
     },
 
     /// Create a child node under a parent
@@ -36,8 +39,11 @@ enum Commands {
         parent_id: String,
         title: Vec<String>,
         /// Set body inline, or pipe stdin (e.g. echo "md" | cx new <parent> "title" --body -)
-        #[arg(long)]
+        #[arg(long, conflicts_with = "body_file")]
         body: Option<String>,
+        /// Read body from a file path
+        #[arg(long = "body-file", short = 'F', conflicts_with = "body")]
+        body_file: Option<String>,
     },
 
     /// List ready nodes, or promote latent nodes to ready
@@ -187,8 +193,8 @@ fn main() {
 fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Init => cmd_init(),
-        Commands::Add { title, body } => cmd_add(title.join(" "), body, cli.json),
-        Commands::New { parent_id, title, body } => cmd_new(parent_id, title.join(" "), body, cli.json),
+        Commands::Add { title, body, body_file } => cmd_add(title.join(" "), body, body_file, cli.json),
+        Commands::New { parent_id, title, body, body_file } => cmd_new(parent_id, title.join(" "), body, body_file, cli.json),
         Commands::Surface { ids, reason } => cmd_surface(ids, reason, cli.json),
         Commands::Claim { id, r#as, reason } => cmd_claim(id, r#as, reason, cli.json),
         Commands::Unclaim { id, reason } => cmd_unclaim(id, reason, cli.json),
@@ -354,7 +360,7 @@ fn cmd_init() -> Result<()> {
 
 // ── add / new ─────────────────────────────────────────────────────────────────
 
-fn cmd_add(title: String, body: Option<String>, json: bool) -> Result<()> {
+fn cmd_add(title: String, body: Option<String>, body_file: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let mut graph = store::load(&root)?;
 
@@ -363,7 +369,11 @@ fn cmd_add(title: String, body: Option<String>, json: bool) -> Result<()> {
     graph.nodes.push(node);
     store::save(&root, &graph)?;
 
-    if let Some(raw) = &body {
+    if let Some(path) = &body_file {
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("cannot read {}: {}", path, e))?;
+        store::write_body(&root, &new_id, &content)?;
+    } else if let Some(raw) = &body {
         let content = resolve_body(raw)?;
         store::write_body(&root, &new_id, &content)?;
     }
@@ -378,7 +388,7 @@ fn cmd_add(title: String, body: Option<String>, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn cmd_new(parent_partial: String, title: String, body: Option<String>, json: bool) -> Result<()> {
+fn cmd_new(parent_partial: String, title: String, body: Option<String>, body_file: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let mut graph = store::load(&root)?;
 
@@ -389,7 +399,11 @@ fn cmd_new(parent_partial: String, title: String, body: Option<String>, json: bo
     graph.nodes.push(node);
     store::save(&root, &graph)?;
 
-    if let Some(raw) = &body {
+    if let Some(path) = &body_file {
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("cannot read {}: {}", path, e))?;
+        store::write_body(&root, &new_id, &content)?;
+    } else if let Some(raw) = &body {
         let content = resolve_body(raw)?;
         store::write_body(&root, &new_id, &content)?;
     }

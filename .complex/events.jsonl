@@ -48,3 +48,7 @@
 {"ts":"2026-03-08T00:23:38.652174048+00:00","action":"claim","node_id":"61bE","part":"claude"}
 {"ts":"2026-03-08T00:28:52.817048708+00:00","action":"integrate","node_id":"61bE","reason":"cx rm now archives before deleting — tests pass, clippy clean"}
 {"ts":"2026-03-08T00:30:09.140656318+00:00","action":"create","node_id":"0FkG","detail":"cx edit should emit an event"}
+{"ts":"2026-03-08T00:32:20.384390543+00:00","action":"create","node_id":"esX7","detail":"Agent-friendly body input without cat heredoc"}
+{"ts":"2026-03-08T00:35:54.099261473+00:00","action":"surface","node_id":"esX7"}
+{"ts":"2026-03-08T00:35:54.101145335+00:00","action":"claim","node_id":"esX7","part":"claude"}
+{"ts":"2026-03-08T00:37:53.086574932+00:00","action":"integrate","node_id":"esX7","reason":"added --body-file/-F to add and new, updated CLAUDE.md"}
