@@ -55,3 +55,7 @@
 {"ts":"2026-03-08T00:46:05.201903515+00:00","action":"surface","node_id":"0FkG"}
 {"ts":"2026-03-08T00:46:58.668602553+00:00","action":"claim","node_id":"0FkG","part":"claude"}
 {"ts":"2026-03-08T00:47:53.223102936+00:00","action":"integrate","node_id":"0FkG","reason":"emit added, test passes"}
+{"ts":"2026-03-08T00:52:14.591062878+00:00","action":"create","node_id":"ioWT","detail":"CX_DIR env var + --ephemeral init"}
+{"ts":"2026-03-08T00:58:48.250602471+00:00","action":"surface","node_id":"ioWT"}
+{"ts":"2026-03-08T00:58:48.252250979+00:00","action":"claim","node_id":"ioWT","part":"claude"}
+{"ts":"2026-03-08T01:00:11.523588436+00:00","action":"integrate","node_id":"ioWT","reason":"CX_DIR + --ephemeral implemented, 5 tests pass"}

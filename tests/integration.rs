@@ -136,6 +136,81 @@ fn commands_outside_project_fail() {
         .stderr(contains("cx init"));
 }
 
+// ── CX_DIR env var ───────────────────────────────────────────────────────────
+
+#[test]
+fn cx_dir_overrides_root() {
+    let dir = TempDir::new().unwrap();
+    let custom = dir.path().join("custom-cx");
+
+    // init with CX_DIR
+    cx(&dir).arg("init")
+        .env("CX_DIR", &custom)
+        .assert().success();
+    assert!(custom.join("graph.json").exists());
+    assert!(!dir.path().join(".complex").exists());
+
+    // add with CX_DIR
+    let out = cx(&dir).args(["--json", "add", "Test task"])
+        .env("CX_DIR", &custom)
+        .output().unwrap();
+    assert!(out.status.success());
+
+    // status with CX_DIR
+    cx(&dir).arg("status")
+        .env("CX_DIR", &custom)
+        .assert().success().stdout(contains("Test task"));
+}
+
+#[test]
+fn cx_dir_missing_graph_errors() {
+    let dir = TempDir::new().unwrap();
+    let bad = dir.path().join("nonexistent");
+
+    cx(&dir).args(["add", "anything"])
+        .env("CX_DIR", &bad)
+        .assert().failure()
+        .stderr(contains("CX_DIR"));
+}
+
+// ── --ephemeral ──────────────────────────────────────────────────────────────
+
+#[test]
+fn init_ephemeral_adds_gitignore() {
+    let dir = TempDir::new().unwrap();
+    cx(&dir).args(["init", "--ephemeral"])
+        .assert().success()
+        .stdout(contains(".gitignore"));
+
+    let gi = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+    assert!(gi.contains(".complex/"));
+}
+
+#[test]
+fn init_ephemeral_appends_to_existing_gitignore() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join(".gitignore"), "target/\n").unwrap();
+
+    cx(&dir).args(["init", "--ephemeral"])
+        .assert().success();
+
+    let gi = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+    assert!(gi.contains("target/"));
+    assert!(gi.contains(".complex/"));
+}
+
+#[test]
+fn init_ephemeral_no_duplicate_in_gitignore() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join(".gitignore"), ".complex/\n").unwrap();
+
+    cx(&dir).args(["init", "--ephemeral"])
+        .assert().success();
+
+    let gi = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+    assert_eq!(gi.matches(".complex/").count(), 1);
+}
+
 // ── cx add ────────────────────────────────────────────────────────────────────
 
 #[test]

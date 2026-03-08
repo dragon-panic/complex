@@ -21,7 +21,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Initialize .complex/ in the current directory
-    Init,
+    Init {
+        /// Add .complex/ to .gitignore (for scratch/CI/agent use)
+        #[arg(long)]
+        ephemeral: bool,
+    },
 
     /// Create a new root complex (human-facing entry point)
     Add {
@@ -192,7 +196,7 @@ fn main() {
 
 fn run(cli: Cli) -> Result<()> {
     match cli.command {
-        Commands::Init => cmd_init(),
+        Commands::Init { ephemeral } => cmd_init(ephemeral),
         Commands::Add { title, body, body_file } => cmd_add(title.join(" "), body, body_file, cli.json),
         Commands::New { parent_id, title, body, body_file } => cmd_new(parent_id, title.join(" "), body, body_file, cli.json),
         Commands::Surface { ids, reason } => cmd_surface(ids, reason, cli.json),
@@ -351,10 +355,27 @@ After any cx mutation, stage and commit `.complex/`:
 
 // ── init ─────────────────────────────────────────────────────────────────────
 
-fn cmd_init() -> Result<()> {
+fn cmd_init(ephemeral: bool) -> Result<()> {
     let cwd = std::env::current_dir()?;
-    store::init(&cwd)?;
-    println!("initialized .complex/ in {}", cwd.display());
+    let root = store::init(&cwd)?;
+    println!("initialized {} in {}", root.display(), cwd.display());
+
+    if ephemeral {
+        let gitignore = cwd.join(".gitignore");
+        let entry = ".complex/\n";
+        let needs_append = if gitignore.exists() {
+            let content = std::fs::read_to_string(&gitignore)?;
+            !content.lines().any(|l| l.trim() == ".complex/" || l.trim() == ".complex")
+        } else {
+            true
+        };
+        if needs_append {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&gitignore)?;
+            f.write_all(entry.as_bytes())?;
+            println!("added .complex/ to .gitignore");
+        }
+    }
     Ok(())
 }
 

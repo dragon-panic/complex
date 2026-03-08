@@ -25,6 +25,13 @@ const EVENTS_ROTATE_LINES: usize = 1000;
 // ── project location ──────────────────────────────────────────────────────────
 
 pub fn find_root() -> Result<PathBuf> {
+    if let Ok(cx_dir) = std::env::var("CX_DIR") {
+        let p = PathBuf::from(cx_dir);
+        if p.join(GRAPH_FILE).exists() {
+            return Ok(p);
+        }
+        bail!("CX_DIR is set to {} but no graph.json found there — run cx init", p.display());
+    }
     let mut dir = std::env::current_dir()?;
     loop {
         if dir.join(COMPLEX_DIR).exists() {
@@ -36,17 +43,21 @@ pub fn find_root() -> Result<PathBuf> {
     }
 }
 
-pub fn init(cwd: &Path) -> Result<()> {
-    let root = cwd.join(COMPLEX_DIR);
+pub fn init(cwd: &Path) -> Result<PathBuf> {
+    let root = if let Ok(cx_dir) = std::env::var("CX_DIR") {
+        PathBuf::from(cx_dir)
+    } else {
+        cwd.join(COMPLEX_DIR)
+    };
     if root.exists() {
-        bail!(".complex/ already exists here");
+        bail!("{} already exists", root.display());
     }
     fs::create_dir_all(root.join(ISSUES_DIR))?;
     fs::create_dir_all(root.join(ARCHIVE_DIR))?;
     fs::create_dir_all(root.join(EVENTS_DIR))?;
     let json = serde_json::to_string_pretty(&Graph::default())?;
     fs::write(root.join(GRAPH_FILE), json)?;
-    Ok(())
+    Ok(root)
 }
 
 // ── graph load / save ─────────────────────────────────────────────────────────
