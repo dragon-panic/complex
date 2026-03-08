@@ -158,6 +158,8 @@ cx show bX7c         # node detail + body
 | `cx parts` | Claimed nodes grouped by part |
 | `cx therapy` | Stale, shadowed, and orphan body files |
 | `cx rename <id> <title>` | Rename a node's title |
+| `cx move <id> <new-parent>` | Reparent a node (and children) under a new parent |
+| `cx move <id> --root` | Promote a child node to root level |
 | `cx edit <id>` | Open body in `$EDITOR` |
 | `cx block <a> <b>` | `a` blocks `b` — cycle-safe |
 | `cx unblock <a> <b>` | Remove a blocks edge |

@@ -1712,6 +1712,126 @@ fn show_text_displays_filed_by() {
         .stdout(contains("filed by: ox:seguro"));
 }
 
+// ── cx move ──────────────────────────────────────────────────────────────────
+
+#[test]
+fn move_reparents_node_under_new_parent() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "Parent A");
+    let b = add(&dir, "Parent B");
+    let child = new_child(&dir, &a, "Child");
+
+    cx(&dir).args(["move", &child, &b]).assert().success();
+
+    let g = graph_json(&dir);
+    let nodes = g["nodes"].as_array().unwrap();
+    let short = child.rsplit('.').next().unwrap();
+    let new_id = format!("{}.{}", b, short);
+    assert!(nodes.iter().any(|n| n["id"] == new_id), "child should have new id under parent B");
+    assert!(!nodes.iter().any(|n| n["id"] == child.as_str()), "old id should be gone");
+}
+
+#[test]
+fn move_promotes_to_root() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let parent = add(&dir, "Parent");
+    let child = new_child(&dir, &parent, "Child");
+    let short = child.rsplit('.').next().unwrap().to_string();
+
+    cx(&dir).args(["move", &child, "--root"]).assert().success();
+
+    let g = graph_json(&dir);
+    let nodes = g["nodes"].as_array().unwrap();
+    assert!(nodes.iter().any(|n| n["id"] == short.as_str()), "child should be a root node now");
+}
+
+#[test]
+fn move_carries_children_along() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let b = add(&dir, "B");
+    let child = new_child(&dir, &a, "Child");
+    let grandchild = new_child(&dir, &child, "Grandchild");
+
+    cx(&dir).args(["move", &child, &b]).assert().success();
+
+    let g = graph_json(&dir);
+    let nodes = g["nodes"].as_array().unwrap();
+    let child_short = child.rsplit('.').next().unwrap();
+    let gc_short = grandchild.rsplit('.').next().unwrap();
+    let new_child_id = format!("{}.{}", b, child_short);
+    let new_gc_id = format!("{}.{}.{}", b, child_short, gc_short);
+    assert!(nodes.iter().any(|n| n["id"] == new_child_id), "child should be under B");
+    assert!(nodes.iter().any(|n| n["id"] == new_gc_id), "grandchild should follow");
+}
+
+#[test]
+fn move_updates_edges() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let b = add(&dir, "B");
+    let blocker = add(&dir, "Blocker");
+    let child = new_child(&dir, &a, "Child");
+
+    cx(&dir).args(["block", &blocker, &child]).assert().success();
+    cx(&dir).args(["move", &child, &b]).assert().success();
+
+    let g = graph_json(&dir);
+    let edges = g["edges"].as_array().unwrap();
+    let child_short = child.rsplit('.').next().unwrap();
+    let new_child_id = format!("{}.{}", b, child_short);
+    assert!(edges.iter().any(|e| e["to"] == new_child_id), "edge should point to new id");
+}
+
+#[test]
+fn move_under_self_fails() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let child = new_child(&dir, &a, "Child");
+
+    cx(&dir).args(["move", &a, &child])
+        .assert()
+        .failure()
+        .stderr(contains("descendant"));
+}
+
+#[test]
+fn move_body_file_follows() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let b = add(&dir, "B");
+    let child = new_child(&dir, &a, "Child");
+
+    // Write a body
+    cx(&dir).args(["edit", &child, "--body", "hello world"]).assert().success();
+
+    cx(&dir).args(["move", &child, &b]).assert().success();
+
+    let child_short = child.rsplit('.').next().unwrap();
+    let new_id = format!("{}.{}", b, child_short);
+    let body_path = dir.path().join(format!(".complex/issues/{}.md", new_id));
+    assert!(body_path.exists(), "body file should be at new path");
+    let old_path = dir.path().join(format!(".complex/issues/{}.md", child));
+    assert!(!old_path.exists(), "old body file should be gone");
+}
+
+#[test]
+fn mv_alias_works() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let b = add(&dir, "B");
+    let child = new_child(&dir, &a, "Child");
+
+    cx(&dir).args(["mv", &child, &b]).assert().success();
+}
+
 // ── block propagation to children ────────────────────────────────────────────
 
 #[test]

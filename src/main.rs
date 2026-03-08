@@ -146,6 +146,20 @@ enum Commands {
         editor: bool,
     },
 
+    /// Move a node (and its children) under a new parent
+    #[command(name = "move", alias = "mv")]
+    Move {
+        id: String,
+        /// New parent node ID (omit for --root)
+        new_parent: Option<String>,
+        /// Promote to a root node (no parent)
+        #[arg(long)]
+        root: bool,
+        /// Why this node is being moved
+        #[arg(long)]
+        reason: Option<String>,
+    },
+
     /// Declare that node A blocks node B
     Block { a: String, b: String },
 
@@ -218,6 +232,7 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Tree { id } => cmd_tree(id, cli.json),
         Commands::Parts => cmd_parts(cli.json),
         Commands::Therapy => cmd_therapy(cli.json),
+        Commands::Move { id, new_parent, root, reason } => cmd_move(id, new_parent, root, reason, cli.json),
         Commands::Rm { id, reason } => cmd_rm(id, reason, cli.json),
         Commands::Rename { id, title } => cmd_rename(id, title.join(" "), cli.json),
         Commands::Edit { id, body, file, editor } => cmd_edit(id, body, file, editor),
@@ -333,6 +348,8 @@ cx add <title> --by <who>        record who filed this (or set CX_FILED_BY)
 cx discover <new-id> <source-id>  record task found while working on source
 cx find <query>                   search nodes by title (case-insensitive)
 cx rename <id> <new title>        rename a node
+cx move <id> <new-parent>         reparent a node (and children) under a new parent
+cx move <id> --root               promote a node to root level
 cx shadow <id>                    flag as blocked/stuck
 cx edit <id> --body "markdown"    update body non-interactively (or pipe: echo "md" | cx edit <id>)
 cx show <id> --json               full node detail: state, edges, body, children
@@ -1028,6 +1045,114 @@ fn cmd_therapy(json: bool) -> Result<()> {
 }
 
 // ── rm ────────────────────────────────────────────────────────────────────
+
+// ── move ──────────────────────────────────────────────────────────────────────
+
+fn cmd_move(partial: String, new_parent: Option<String>, to_root: bool, reason: Option<String>, json: bool) -> Result<()> {
+    if new_parent.is_none() && !to_root {
+        bail!("provide a new parent ID, or use --root to promote to root level");
+    }
+    if new_parent.is_some() && to_root {
+        bail!("cannot specify both a new parent and --root");
+    }
+
+    let root = store::find_root()?;
+    let mut graph = store::load(&root)?;
+    let resolved = id::resolve(&graph, &partial)?;
+
+    // Resolve new parent if given
+    let new_parent_id = match &new_parent {
+        Some(p) => {
+            let pid = id::resolve(&graph, p)?;
+            // Can't move under yourself or your own descendant
+            if pid == resolved || pid.starts_with(&format!("{}.", resolved)) {
+                bail!("cannot move {} under its own descendant {}", resolved, pid);
+            }
+            Some(pid)
+        }
+        None => None,
+    };
+
+    // Extract the short (leaf) segment of the node's current ID
+    let short = resolved.rsplit('.').next().unwrap();
+    let new_id = match &new_parent_id {
+        Some(pid) => format!("{}.{}", pid, short),
+        None => short.to_string(),
+    };
+
+    if new_id == resolved {
+        bail!("{} is already there", resolved);
+    }
+
+    // Check for ID collision
+    if graph.get_node(&new_id).is_some() {
+        bail!("a node with id {} already exists", new_id);
+    }
+
+    // Collect all nodes to rename: the node itself + all descendants
+    let old_prefix = format!("{}.", resolved);
+    let renames: Vec<(String, String)> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.id == resolved || n.id.starts_with(&old_prefix))
+        .map(|n| {
+            let new = if n.id == resolved {
+                new_id.clone()
+            } else {
+                format!("{}{}", new_id, &n.id[resolved.len()..])
+            };
+            (n.id.clone(), new)
+        })
+        .collect();
+
+    // Check for collisions with descendants too
+    for (_, new) in &renames {
+        if graph.nodes.iter().any(|n| n.id == *new && !renames.iter().any(|(old, _)| *old == n.id)) {
+            bail!("a node with id {} already exists", new);
+        }
+    }
+
+    // Rename body files
+    let issues_dir = root.join("issues");
+    for (old, new) in &renames {
+        let src = issues_dir.join(format!("{}.md", old));
+        let dst = issues_dir.join(format!("{}.md", new));
+        if src.exists() {
+            std::fs::rename(&src, &dst)?;
+        }
+    }
+
+    // Update node IDs
+    for node in &mut graph.nodes {
+        if let Some((_, new)) = renames.iter().find(|(old, _)| *old == node.id) {
+            node.id = new.clone();
+            node.touch();
+        }
+    }
+
+    // Update edge references
+    for edge in &mut graph.edges {
+        if let Some((_, new)) = renames.iter().find(|(old, _)| *old == edge.from) {
+            edge.from = new.clone();
+        }
+        if let Some((_, new)) = renames.iter().find(|(old, _)| *old == edge.to) {
+            edge.to = new.clone();
+        }
+    }
+
+    store::save(&root, &graph)?;
+    emit(&root, "move", &new_id, None, Some(&resolved), reason.as_deref());
+
+    if json {
+        let moved: Vec<_> = renames.iter().map(|(old, new)| serde_json::json!({"old": old, "new": new})).collect();
+        println!("{}", serde_json::json!({ "id": new_id, "from": resolved, "moved": moved }));
+    } else {
+        for (old, new) in &renames {
+            println!("{}  →  {}", old, new);
+        }
+    }
+    Ok(())
+}
 
 fn cmd_rm(partial: String, reason: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;

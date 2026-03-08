@@ -71,3 +71,7 @@
 {"ts":"2026-03-08T23:07:58.308549122+00:00","action":"surface","node_id":"AY37"}
 {"ts":"2026-03-08T23:07:58.310338614+00:00","action":"claim","node_id":"AY37","part":"claude"}
 {"ts":"2026-03-08T23:09:45.629848935+00:00","action":"integrate","node_id":"AY37","reason":"block edges now propagate to children — fixed in db::ready_nodes SQL and cmd_claim"}
+{"ts":"2026-03-08T23:26:38.257778006+00:00","action":"create","node_id":"6lgG","detail":"cx move: reparent a node under a new parent"}
+{"ts":"2026-03-08T23:26:40.720429322+00:00","action":"surface","node_id":"6lgG"}
+{"ts":"2026-03-08T23:26:40.722068225+00:00","action":"claim","node_id":"6lgG","part":"claude"}
+{"ts":"2026-03-08T23:33:20.505866761+00:00","action":"integrate","node_id":"6lgG","reason":"cx move/mv command with tests"}
