@@ -171,6 +171,9 @@ enum Commands {
 
     /// Show registered agents and their last-seen time
     Agents,
+
+    /// Show tree + ready nodes (quick overview)
+    Status,
 }
 
 fn main() {
@@ -209,6 +212,7 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Meta { id, value } => cmd_meta(id, value, cli.json),
         Commands::Log { limit } => cmd_log(limit, cli.json),
         Commands::Agents => cmd_agents(cli.json),
+        Commands::Status => cmd_status(cli.json),
     }
 }
 
@@ -271,6 +275,7 @@ ordering. Run `cx surface` at any time — it only shows tasks with no open bloc
 ## Commands you will use
 
 ```
+cx status --json                  tree + ready nodes (quick overview)
 cx surface --json                 ready tasks (no open blockers)
 cx claim <id> --as <name>         take ownership (requires ready state)
 cx unclaim <id>                   release if you cannot complete it
@@ -1220,6 +1225,96 @@ fn cmd_agents(json: bool) -> Result<()> {
         for a in &agents {
             let ts_short = &a.last_seen[..19].replace('T', " ");
             println!("{:<30}  last seen {}", a.name, ts_short);
+        }
+    }
+    Ok(())
+}
+
+// ── status ────────────────────────────────────────────────────────────────────
+
+fn cmd_status(json: bool) -> Result<()> {
+    let root = store::find_root()?;
+    let graph = store::load(&root)?;
+    let conn = db::materialize(&graph)?;
+    let ready = db::ready_nodes(&conn)?;
+
+    if json {
+        fn node_to_tree(graph: &model::Graph, node: &model::Node) -> serde_json::Value {
+            let mut children = graph.children(&node.id);
+            children.sort_by(|a, b| a.id.cmp(&b.id));
+            let child_trees: Vec<serde_json::Value> = children
+                .iter()
+                .map(|c| node_to_tree(graph, c))
+                .collect();
+            serde_json::json!({
+                "id": node.id,
+                "title": node.title,
+                "state": node.state.to_string(),
+                "shadowed": node.shadowed,
+                "part": node.part,
+                "children": child_trees,
+            })
+        }
+
+        let tree: Vec<serde_json::Value> = graph
+            .roots()
+            .iter()
+            .map(|r| node_to_tree(&graph, r))
+            .collect();
+        let ready_out: Vec<_> = ready
+            .iter()
+            .map(|n| serde_json::json!({ "id": n.id, "title": n.title, "part": n.part }))
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "tree": tree,
+                "ready": ready_out,
+            }))?
+        );
+    } else {
+        fn print_node(graph: &model::Graph, node: &model::Node, depth: usize) {
+            let indent = "  ".repeat(depth);
+            let shadow = if node.shadowed { " [shadowed]" } else { "" };
+            let part = node
+                .part
+                .as_deref()
+                .map(|p| format!("  :{}", p))
+                .unwrap_or_default();
+            let leaf = if depth > 0 {
+                node.id.rfind('.').map(|i| &node.id[i + 1..]).unwrap_or(&node.id)
+            } else {
+                &node.id
+            };
+            println!(
+                "{}{}  {}  [{}{}]{}",
+                indent, leaf, node.title, node.state, shadow, part
+            );
+            let mut children = graph.children(&node.id);
+            children.sort_by(|a, b| a.id.cmp(&b.id));
+            for child in children {
+                print_node(graph, child, depth + 1);
+            }
+        }
+
+        let roots = graph.roots();
+        if roots.is_empty() {
+            println!("(no nodes)");
+        } else {
+            for node in roots {
+                print_node(&graph, node, 0);
+            }
+        }
+
+        println!();
+
+        if ready.is_empty() {
+            println!("no ready nodes");
+        } else {
+            for n in &ready {
+                let part = n.part.as_deref().unwrap_or("—");
+                println!("{:<20}  {:<40}  {}", n.id, n.title, part);
+            }
         }
     }
     Ok(())

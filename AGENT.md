@@ -20,6 +20,7 @@ ordering. Run `cx surface` at any time — it only shows tasks with no open bloc
 ## Commands you will use
 
 ```
+cx status --json                  tree + ready nodes (quick overview)
 cx surface --json                 ready tasks (no open blockers)
 cx claim <id> --as <name>         take ownership (requires ready state)
 cx unclaim <id>                   release if you cannot complete it

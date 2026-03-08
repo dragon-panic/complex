@@ -62,6 +62,46 @@ fn archive_entries(dir: &TempDir) -> Vec<serde_json::Value> {
         .collect()
 }
 
+// ── cx status ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn status_shows_tree_and_surface() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let root = add(&dir, "My Project");
+    let child = new_child(&dir, &root, "Task A");
+    surface_id(&dir, &child);
+
+    cx(&dir).args(["status"]).assert().success()
+        .stdout(contains("My Project"))
+        .stdout(contains("Task A"))
+        .stdout(contains("ready"));
+}
+
+#[test]
+fn status_json_has_tree_and_ready() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let root = add(&dir, "Root");
+    let child = new_child(&dir, &root, "Child");
+    surface_id(&dir, &child);
+
+    let out = cx(&dir).args(["--json", "status"]).output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(v["tree"].is_array());
+    assert!(v["ready"].is_array());
+    assert_eq!(v["tree"][0]["title"], "Root");
+    assert_eq!(v["ready"][0]["title"], "Child");
+}
+
+#[test]
+fn status_empty_project() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    cx(&dir).args(["status"]).assert().success();
+}
+
 // ── cx init ───────────────────────────────────────────────────────────────────
 
 #[test]
