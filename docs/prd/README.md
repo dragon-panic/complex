@@ -190,7 +190,7 @@ cx log                  recent events (audit trail)
 ### Write commands
 
 ```
-cx init                 initialize .complex/ in current directory
+cx init [--ephemeral]   initialize .complex/ (--ephemeral adds to .gitignore)
 cx add                  create a new root complex (human-facing)
 cx new <parent-id>      create a child node under parent
 cx edit <id>            open body in $EDITOR

@@ -139,7 +139,7 @@ cx show bX7c         # node detail + body
 
 | Command | Description |
 |---|---|
-| `cx init` | Initialize `.complex/` in current directory |
+| `cx init [--ephemeral]` | Initialize `.complex/` in current directory (`--ephemeral` adds it to `.gitignore`) |
 | `cx add <title>` | Create a new root complex |
 | `cx new <parent> <title>` | Create a child node |
 | `cx surface` | List ready nodes |
