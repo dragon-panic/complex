@@ -1548,3 +1548,166 @@ fn relate_nonexistent_node_fails() {
     let id = add(&dir, "Real Node");
     cx(&dir).args(["relate", &id, "NOPE"]).assert().failure();
 }
+
+// ── filed_by ──────────────────────────────────────────────────────────────────
+
+#[test]
+fn add_with_by_flag_sets_filed_by() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let out = cx(&dir)
+        .args(["--json", "add", "Bug report", "--by", "ox:seguro"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let id = v["id"].as_str().unwrap();
+
+    // Verify in show --json
+    let show = cx(&dir).args(["--json", "show", id]).output().unwrap();
+    let s: serde_json::Value = serde_json::from_slice(&show.stdout).unwrap();
+    assert_eq!(s["filed_by"], "ox:seguro");
+}
+
+#[test]
+fn new_with_by_flag_sets_filed_by() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let root = add(&dir, "Parent");
+    let out = cx(&dir)
+        .args(["--json", "new", &root, "Child issue", "--by", "claude:myproj"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let id = v["id"].as_str().unwrap();
+
+    let show = cx(&dir).args(["--json", "show", id]).output().unwrap();
+    let s: serde_json::Value = serde_json::from_slice(&show.stdout).unwrap();
+    assert_eq!(s["filed_by"], "claude:myproj");
+}
+
+#[test]
+fn cx_filed_by_env_var_fallback() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let out = cx(&dir)
+        .env("CX_FILED_BY", "ox:seguro")
+        .args(["--json", "add", "From env"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let id = v["id"].as_str().unwrap();
+
+    let show = cx(&dir).args(["--json", "show", id]).output().unwrap();
+    let s: serde_json::Value = serde_json::from_slice(&show.stdout).unwrap();
+    assert_eq!(s["filed_by"], "ox:seguro");
+}
+
+#[test]
+fn by_flag_overrides_env_var() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let out = cx(&dir)
+        .env("CX_FILED_BY", "env-agent")
+        .args(["--json", "add", "Override test", "--by", "flag-agent"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let id = v["id"].as_str().unwrap();
+
+    let show = cx(&dir).args(["--json", "show", id]).output().unwrap();
+    let s: serde_json::Value = serde_json::from_slice(&show.stdout).unwrap();
+    assert_eq!(s["filed_by"], "flag-agent");
+}
+
+#[test]
+fn filed_by_absent_when_not_set() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "No filer");
+
+    let show = cx(&dir).args(["--json", "show", &id]).output().unwrap();
+    let s: serde_json::Value = serde_json::from_slice(&show.stdout).unwrap();
+    assert!(s["filed_by"].is_null());
+}
+
+#[test]
+fn list_filtered_by_filed_by() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+
+    cx(&dir).args(["add", "From ox", "--by", "ox:seguro"]).assert().success();
+    cx(&dir).args(["add", "From claude", "--by", "claude:myproj"]).assert().success();
+    cx(&dir).args(["add", "No filer"]).assert().success();
+
+    let out = cx(&dir)
+        .args(["--json", "list", "--filed-by", "ox:seguro"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let arr = v.as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["title"], "From ox");
+    assert_eq!(arr[0]["filed_by"], "ox:seguro");
+}
+
+#[test]
+fn filed_by_survives_roundtrip() {
+    // Backward compat: filed_by is persisted in graph.json and survives load/save
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    cx(&dir).args(["add", "Test", "--by", "ox:seguro"]).assert().success();
+
+    let graph = graph_json(&dir);
+    let node = &graph["nodes"][0];
+    assert_eq!(node["filed_by"], "ox:seguro");
+}
+
+#[test]
+fn old_graph_without_filed_by_loads_fine() {
+    // Simulate an old graph.json that has no filed_by field
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+
+    // Write a graph.json without filed_by
+    let graph = r#"{"version":1,"nodes":[{"id":"test","title":"Old node","state":"latent","shadowed":false,"part":null,"created_at":"2026-01-01T00:00:00+00:00","updated_at":"2026-01-01T00:00:00+00:00"}],"edges":[]}"#;
+    std::fs::write(dir.path().join(".complex/graph.json"), graph).unwrap();
+
+    // Should load without error
+    let out = cx(&dir).args(["--json", "show", "test"]).output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["title"], "Old node");
+    assert!(v["filed_by"].is_null());
+}
+
+#[test]
+fn filed_by_in_tree_json() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    cx(&dir).args(["add", "Root", "--by", "ox:seguro"]).assert().success();
+
+    let out = cx(&dir).args(["--json", "tree"]).output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v[0]["filed_by"], "ox:seguro");
+}
+
+#[test]
+fn show_text_displays_filed_by() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let out = cx(&dir)
+        .args(["--json", "add", "Bug", "--by", "ox:seguro"])
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let id = v["id"].as_str().unwrap();
+
+    cx(&dir).args(["show", id]).assert().success()
+        .stdout(contains("filed by: ox:seguro"));
+}

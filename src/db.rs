@@ -13,6 +13,7 @@ pub fn materialize(graph: &Graph) -> Result<Connection> {
             state      TEXT NOT NULL,
             shadowed   INTEGER NOT NULL DEFAULT 0,
             part       TEXT,
+            filed_by   TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -26,13 +27,14 @@ pub fn materialize(graph: &Graph) -> Result<Connection> {
 
     for n in &graph.nodes {
         conn.execute(
-            "INSERT INTO nodes VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO nodes VALUES (?,?,?,?,?,?,?,?)",
             params![
                 n.id,
                 n.title,
                 n.state.to_string(),
                 n.shadowed as i32,
                 n.part,
+                n.filed_by,
                 n.created_at.to_rfc3339(),
                 n.updated_at.to_rfc3339(),
             ],

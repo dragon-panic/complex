@@ -54,6 +54,9 @@ pub struct Node {
     pub part: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Who/what created this node (e.g. "ox", "claude@seguro").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filed_by: Option<String>,
     /// Arbitrary JSON for orchestrators, agents, and workflow engines.
     /// complex stores it and ignores it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -71,6 +74,7 @@ impl Node {
             state: State::Latent,
             shadowed: false,
             part: None,
+            filed_by: None,
             created_at: now,
             updated_at: now,
             meta: None,

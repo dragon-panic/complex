@@ -140,8 +140,8 @@ cx show bX7c         # node detail + body
 | Command | Description |
 |---|---|
 | `cx init [--ephemeral]` | Initialize `.complex/` in current directory (`--ephemeral` adds it to `.gitignore`) |
-| `cx add <title>` | Create a new root complex |
-| `cx new <parent> <title>` | Create a child node |
+| `cx add <title>` | Create a new root complex (`--by <who>` to record filer) |
+| `cx new <parent> <title>` | Create a child node (`--by <who>` to record filer) |
 | `cx surface` | List ready nodes |
 | `cx surface <id>` | Promote latent → ready |
 | `cx claim <id>` | Claim a ready node (`--as <part>` or `$CX_PART`) |
@@ -154,7 +154,7 @@ cx show bX7c         # node detail + body
 | `cx show <id>` | Node detail: title, body, edges, children |
 | `cx tree [id]` | Full hierarchy with states |
 | `cx find <query>` | Search nodes by title (case-insensitive) |
-| `cx list [--state <s>]` | All nodes, optionally filtered by state |
+| `cx list [--state <s>] [--filed-by <who>]` | All nodes, optionally filtered |
 | `cx parts` | Claimed nodes grouped by part |
 | `cx therapy` | Stale, shadowed, and orphan body files |
 | `cx rename <id> <title>` | Rename a node's title |
@@ -173,6 +173,7 @@ machine-readable output.
 | Variable | Description |
 |---|---|
 | `CX_PART` | Identity of the current agent or user |
+| `CX_FILED_BY` | Default `--by` value — who filed the task (convention: `project:agent`, e.g. `seguro:ox`) |
 | `CX_DIR` | Override `.complex/` location |
 | `EDITOR` | Used by `cx edit` |
 

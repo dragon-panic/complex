@@ -59,3 +59,7 @@
 {"ts":"2026-03-08T00:58:48.250602471+00:00","action":"surface","node_id":"ioWT"}
 {"ts":"2026-03-08T00:58:48.252250979+00:00","action":"claim","node_id":"ioWT","part":"claude"}
 {"ts":"2026-03-08T01:00:11.523588436+00:00","action":"integrate","node_id":"ioWT","reason":"CX_DIR + --ephemeral implemented, 5 tests pass"}
+{"ts":"2026-03-08T17:33:27.423567550+00:00","action":"create","node_id":"hPKU","detail":"Add filed_by field to track who created a task"}
+{"ts":"2026-03-08T17:33:30.266085583+00:00","action":"surface","node_id":"hPKU"}
+{"ts":"2026-03-08T17:33:30.267525242+00:00","action":"claim","node_id":"hPKU","part":"claude"}
+{"ts":"2026-03-08T17:38:23.346548726+00:00","action":"integrate","node_id":"hPKU","reason":"implemented filed_by — all 109 tests pass, clippy clean"}

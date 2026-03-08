@@ -28,6 +28,7 @@ cx integrate <id>                 mark done → archive, unblocks dependents
 cx rm <id>                        remove/discard a node (not integrate)
 cx new <parent-id> <title>        create a child task under a parent
 cx add <title> --body "markdown"  create with body in one shot (also works on cx new)
+cx add <title> --by <who>        record who filed this (or set CX_FILED_BY)
 cx discover <new-id> <source-id>  record task found while working on source
 cx find <query>                   search nodes by title (case-insensitive)
 cx rename <id> <new title>        rename a node
@@ -62,7 +63,8 @@ Short IDs (leaf segment) work when unambiguous:  cx claim bX7c
 
 ## Environment
 
-  CX_PART   your identity — set this before claiming anything
+  CX_PART      your identity — set this before claiming anything
+  CX_FILED_BY  default --by value (convention: project:agent, e.g. seguro:ox)
 
 ## Rationale (--reason)
 

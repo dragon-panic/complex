@@ -36,6 +36,9 @@ enum Commands {
         /// Read body from a file path
         #[arg(long = "body-file", short = 'F', conflicts_with = "body")]
         body_file: Option<String>,
+        /// Who/what is filing this (falls back to CX_FILED_BY env var)
+        #[arg(long)]
+        by: Option<String>,
     },
 
     /// Create a child node under a parent
@@ -48,6 +51,9 @@ enum Commands {
         /// Read body from a file path
         #[arg(long = "body-file", short = 'F', conflicts_with = "body")]
         body_file: Option<String>,
+        /// Who/what is filing this (falls back to CX_FILED_BY env var)
+        #[arg(long)]
+        by: Option<String>,
     },
 
     /// List ready nodes, or promote latent nodes to ready
@@ -157,10 +163,13 @@ enum Commands {
         query: Vec<String>,
     },
 
-    /// List all nodes, optionally filtered by state
+    /// List all nodes, optionally filtered by state or filer
     List {
         #[arg(long, value_name = "STATE")]
         state: Option<String>,
+        /// Filter by who filed the node
+        #[arg(long, value_name = "WHO")]
+        filed_by: Option<String>,
     },
 
     /// Read or write arbitrary metadata on a node (JSON blob)
@@ -197,8 +206,8 @@ fn main() {
 fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Init { ephemeral } => cmd_init(ephemeral),
-        Commands::Add { title, body, body_file } => cmd_add(title.join(" "), body, body_file, cli.json),
-        Commands::New { parent_id, title, body, body_file } => cmd_new(parent_id, title.join(" "), body, body_file, cli.json),
+        Commands::Add { title, body, body_file, by } => cmd_add(title.join(" "), body, body_file, by, cli.json),
+        Commands::New { parent_id, title, body, body_file, by } => cmd_new(parent_id, title.join(" "), body, body_file, by, cli.json),
         Commands::Surface { ids, reason } => cmd_surface(ids, reason, cli.json),
         Commands::Claim { id, r#as, reason } => cmd_claim(id, r#as, reason, cli.json),
         Commands::Unclaim { id, reason } => cmd_unclaim(id, reason, cli.json),
@@ -217,7 +226,7 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Relate { a, b } => cmd_edge(a, b, EdgeType::Related, false, cli.json),
         Commands::Discover { a, b } => cmd_edge(a, b, EdgeType::DiscoveredFrom, false, cli.json),
         Commands::Find { query } => cmd_find(query.join(" "), cli.json),
-        Commands::List { state } => cmd_list(state, cli.json),
+        Commands::List { state, filed_by } => cmd_list(state, filed_by, cli.json),
         Commands::Agent => { print!("{}", AGENT_GUIDE); Ok(()) },
         Commands::Meta { id, value } => cmd_meta(id, value, cli.json),
         Commands::Log { limit } => cmd_log(limit, cli.json),
@@ -293,6 +302,7 @@ cx integrate <id>                 mark done → archive, unblocks dependents
 cx rm <id>                        remove/discard a node (not integrate)
 cx new <parent-id> <title>        create a child task under a parent
 cx add <title> --body "markdown"  create with body in one shot (also works on cx new)
+cx add <title> --by <who>        record who filed this (or set CX_FILED_BY)
 cx discover <new-id> <source-id>  record task found while working on source
 cx find <query>                   search nodes by title (case-insensitive)
 cx rename <id> <new title>        rename a node
@@ -344,7 +354,8 @@ Short IDs (leaf segment) work when unambiguous:  cx claim bX7c
 
 ## Environment
 
-  CX_PART   your identity — set this before claiming anything
+  CX_PART      your identity — set this before claiming anything
+  CX_FILED_BY  default --by value (convention: project:agent, e.g. seguro:ox)
 
 ## What to commit
 
@@ -390,12 +401,15 @@ fn cmd_init(ephemeral: bool) -> Result<()> {
 
 // ── add / new ─────────────────────────────────────────────────────────────────
 
-fn cmd_add(title: String, body: Option<String>, body_file: Option<String>, json: bool) -> Result<()> {
+fn cmd_add(title: String, body: Option<String>, body_file: Option<String>, by: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let mut graph = store::load(&root)?;
 
+    let filed_by = by.or_else(|| std::env::var("CX_FILED_BY").ok());
+
     let new_id = id::generate(None);
-    let node = model::Node::new(new_id.clone(), title.clone());
+    let mut node = model::Node::new(new_id.clone(), title.clone());
+    node.filed_by = filed_by;
     graph.nodes.push(node);
     store::save(&root, &graph)?;
 
@@ -418,14 +432,17 @@ fn cmd_add(title: String, body: Option<String>, body_file: Option<String>, json:
     Ok(())
 }
 
-fn cmd_new(parent_partial: String, title: String, body: Option<String>, body_file: Option<String>, json: bool) -> Result<()> {
+fn cmd_new(parent_partial: String, title: String, body: Option<String>, body_file: Option<String>, by: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let mut graph = store::load(&root)?;
+
+    let filed_by = by.or_else(|| std::env::var("CX_FILED_BY").ok());
 
     let parent_id = id::resolve(&graph, &parent_partial)
         .map_err(|_| anyhow::anyhow!("parent '{}' not found — use cx tree to list nodes", parent_partial))?;
     let new_id = id::generate(Some(&parent_id));
-    let node = model::Node::new(new_id.clone(), title.clone());
+    let mut node = model::Node::new(new_id.clone(), title.clone());
+    node.filed_by = filed_by;
     graph.nodes.push(node);
     store::save(&root, &graph)?;
 
@@ -748,6 +765,7 @@ fn cmd_show(partial: String, json: bool) -> Result<()> {
                 "state": node.state.to_string(),
                 "shadowed": node.shadowed,
                 "part": node.part,
+                "filed_by": node.filed_by,
                 "meta": node.meta,
                 "created_at": node.created_at,
                 "updated_at": node.updated_at,
@@ -767,6 +785,9 @@ fn cmd_show(partial: String, json: bool) -> Result<()> {
         );
         if let Some(p) = &node.part {
             println!("part:     {}", p);
+        }
+        if let Some(f) = &node.filed_by {
+            println!("filed by: {}", f);
         }
         if let Some(r) = node.meta.as_ref().and_then(|m| m["_reason"].as_str()) {
             println!("reason:   {}", r);
@@ -819,6 +840,7 @@ fn cmd_tree(root_id: Option<String>, json: bool) -> Result<()> {
                 "state": node.state.to_string(),
                 "shadowed": node.shadowed,
                 "part": node.part,
+                "filed_by": node.filed_by,
                 "children": child_trees,
             })
         }
@@ -1160,6 +1182,7 @@ fn cmd_find(query: String, json: bool) -> Result<()> {
                 serde_json::json!({
                     "id": n.id, "title": n.title,
                     "state": n.state.to_string(), "part": n.part,
+                    "filed_by": n.filed_by,
                 })
             })
             .collect();
@@ -1177,7 +1200,7 @@ fn cmd_find(query: String, json: bool) -> Result<()> {
 
 // ── list ──────────────────────────────────────────────────────────────────────
 
-fn cmd_list(state_filter: Option<String>, json: bool) -> Result<()> {
+fn cmd_list(state_filter: Option<String>, filed_by_filter: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let graph = store::load(&root)?;
 
@@ -1186,6 +1209,10 @@ fn cmd_list(state_filter: Option<String>, json: bool) -> Result<()> {
         .iter()
         .filter(|n| match &state_filter {
             Some(s) => n.state.to_string() == *s,
+            None => true,
+        })
+        .filter(|n| match &filed_by_filter {
+            Some(f) => n.filed_by.as_deref() == Some(f.as_str()),
             None => true,
         })
         .collect();
@@ -1198,6 +1225,7 @@ fn cmd_list(state_filter: Option<String>, json: bool) -> Result<()> {
                     "id": n.id, "title": n.title,
                     "state": n.state.to_string(),
                     "shadowed": n.shadowed, "part": n.part,
+                    "filed_by": n.filed_by,
                 })
             })
             .collect();
@@ -1290,6 +1318,7 @@ fn cmd_status(json: bool) -> Result<()> {
                 "state": node.state.to_string(),
                 "shadowed": node.shadowed,
                 "part": node.part,
+                "filed_by": node.filed_by,
                 "children": child_trees,
             })
         }
