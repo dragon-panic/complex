@@ -173,6 +173,56 @@ fn cx_dir_missing_graph_errors() {
         .stderr(contains("CX_DIR"));
 }
 
+#[test]
+fn cx_dir_takes_priority_over_local() {
+    let dir = TempDir::new().unwrap();
+    let custom = dir.path().join("custom-cx");
+
+    // init both: local .complex/ and custom CX_DIR
+    init(&dir);
+    cx(&dir).arg("init")
+        .env("CX_DIR", &custom)
+        .assert().success();
+
+    // add to local
+    let local_id = add(&dir, "Local task");
+
+    // add to custom
+    let out = cx(&dir).args(["--json", "add", "Custom task"])
+        .env("CX_DIR", &custom)
+        .output().unwrap();
+    assert!(out.status.success());
+
+    // status with CX_DIR should show custom, not local
+    cx(&dir).arg("status")
+        .env("CX_DIR", &custom)
+        .assert().success()
+        .stdout(contains("Custom task"));
+
+    // status without CX_DIR should show local
+    cx(&dir).arg("status")
+        .assert().success()
+        .stdout(contains("Local task"));
+
+    // confirm they don't leak into each other
+    let custom_status = cx(&dir).arg("status")
+        .env("CX_DIR", &custom)
+        .output().unwrap();
+    assert!(!String::from_utf8_lossy(&custom_status.stdout).contains(&local_id));
+}
+
+#[test]
+fn cx_dir_existing_dir_no_graph_errors() {
+    let dir = TempDir::new().unwrap();
+    let partial = dir.path().join("partial-cx");
+    std::fs::create_dir_all(&partial).unwrap();
+
+    cx(&dir).args(["add", "anything"])
+        .env("CX_DIR", &partial)
+        .assert().failure()
+        .stderr(contains("CX_DIR"));
+}
+
 // ── --ephemeral ──────────────────────────────────────────────────────────────
 
 #[test]
@@ -209,6 +259,28 @@ fn init_ephemeral_no_duplicate_in_gitignore() {
 
     let gi = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
     assert_eq!(gi.matches(".complex/").count(), 1);
+}
+
+#[test]
+fn init_without_ephemeral_no_gitignore() {
+    let dir = TempDir::new().unwrap();
+    cx(&dir).arg("init").assert().success();
+    assert!(!dir.path().join(".gitignore").exists());
+}
+
+#[test]
+fn init_ephemeral_with_external_cx_dir_skips_gitignore() {
+    let dir = TempDir::new().unwrap();
+    let external = TempDir::new().unwrap();
+    let cx_path = external.path().join("ext-cx");
+
+    cx(&dir).args(["init", "--ephemeral"])
+        .env("CX_DIR", &cx_path)
+        .assert().success()
+        .stdout(contains("--ephemeral ignored"));
+
+    // no .gitignore created since CX_DIR is outside the project
+    assert!(!dir.path().join(".gitignore").exists());
 }
 
 // ── cx add ────────────────────────────────────────────────────────────────────

@@ -361,19 +361,28 @@ fn cmd_init(ephemeral: bool) -> Result<()> {
     println!("initialized {} in {}", root.display(), cwd.display());
 
     if ephemeral {
-        let gitignore = cwd.join(".gitignore");
-        let entry = ".complex/\n";
-        let needs_append = if gitignore.exists() {
-            let content = std::fs::read_to_string(&gitignore)?;
-            !content.lines().any(|l| l.trim() == ".complex/" || l.trim() == ".complex")
+        // Only add to .gitignore if the root is inside cwd (i.e. not an external CX_DIR)
+        if let Ok(rel) = root.strip_prefix(&cwd) {
+            let gitignore = cwd.join(".gitignore");
+            let entry_name = format!("{}/", rel.display());
+            let needs_append = if gitignore.exists() {
+                let content = std::fs::read_to_string(&gitignore)?;
+                !content.lines().any(|l| {
+                    let t = l.trim();
+                    t == entry_name.trim_end_matches('/') || t == entry_name.trim()
+                })
+            } else {
+                true
+            };
+            if needs_append {
+                use std::io::Write;
+                let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&gitignore)?;
+                f.write_all(entry_name.as_bytes())?;
+                f.write_all(b"\n")?;
+                println!("added {} to .gitignore", entry_name.trim());
+            }
         } else {
-            true
-        };
-        if needs_append {
-            use std::io::Write;
-            let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&gitignore)?;
-            f.write_all(entry.as_bytes())?;
-            println!("added .complex/ to .gitignore");
+            println!("--ephemeral ignored: {} is outside the project", root.display());
         }
     }
     Ok(())
