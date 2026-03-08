@@ -951,17 +951,10 @@ fn cmd_rm(partial: String, reason: Option<String>, json: bool) -> Result<()> {
         .map(|n| n.title.clone())
         .unwrap_or_default();
 
-    // Remove the node
-    graph.nodes.retain(|n| n.id != resolved);
-    // Remove edges referencing it
-    graph.edges.retain(|e| e.from != resolved && e.to != resolved);
+    // Archive the node (moves to archive.jsonl + body to archive/)
+    store::migrate_archive_if_needed(&root).ok();
+    store::archive_node(&root, &mut graph, &resolved)?;
     store::save(&root, &graph)?;
-
-    // Remove body file if present
-    let body_path = root.join("issues").join(format!("{}.md", resolved));
-    if body_path.exists() {
-        std::fs::remove_file(body_path)?;
-    }
 
     emit(&root, "rm", &resolved, None, Some(&title), reason.as_deref());
 

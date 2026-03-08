@@ -43,3 +43,8 @@
 {"ts":"2026-03-08T00:07:28.801593012+00:00","action":"create","node_id":"chfy","detail":"cx status command — combined tree + surface output"}
 {"ts":"2026-03-08T00:10:35.992204845+00:00","action":"create","node_id":"chfy.6otE","detail":"heredoc pipe pattern triggers Claude Code approval"}
 {"ts":"2026-03-08T00:16:04.318864609+00:00","action":"integrate","node_id":"chfy","reason":"cx status command implemented, tests pass, docs updated"}
+{"ts":"2026-03-08T00:21:43.350767992+00:00","action":"create","node_id":"61bE","detail":"cx rm should archive before deleting"}
+{"ts":"2026-03-08T00:23:38.650265265+00:00","action":"surface","node_id":"61bE"}
+{"ts":"2026-03-08T00:23:38.652174048+00:00","action":"claim","node_id":"61bE","part":"claude"}
+{"ts":"2026-03-08T00:28:52.817048708+00:00","action":"integrate","node_id":"61bE","reason":"cx rm now archives before deleting — tests pass, clippy clean"}
+{"ts":"2026-03-08T00:30:09.140656318+00:00","action":"create","node_id":"0FkG","detail":"cx edit should emit an event"}

@@ -1150,7 +1150,21 @@ fn rm_cleans_up_edges() {
 }
 
 #[test]
-fn rm_removes_body_file() {
+fn rm_archives_node() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "Discarded");
+    cx(&dir).args(["rm", &id]).assert().success();
+
+    // node in archive
+    let entries = archive_entries(&dir);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["id"], id.as_str());
+    assert_eq!(entries[0]["title"], "Discarded");
+}
+
+#[test]
+fn rm_moves_body_to_archive() {
     let dir = TempDir::new().unwrap();
     init(&dir);
     let id = add(&dir, "With Body");
@@ -1158,6 +1172,10 @@ fn rm_removes_body_file() {
     std::fs::write(&body_path, "some content").unwrap();
     cx(&dir).args(["rm", &id]).assert().success();
     assert!(!body_path.exists());
+    // body moved to archive dir
+    let archived_body = dir.path().join(format!(".complex/archive/{}.md", id));
+    assert!(archived_body.exists());
+    assert_eq!(std::fs::read_to_string(archived_body).unwrap(), "some content");
 }
 
 #[test]
