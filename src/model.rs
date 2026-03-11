@@ -57,6 +57,9 @@ pub struct Node {
     /// Who/what created this node (e.g. "ox", "claude@seguro").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filed_by: Option<String>,
+    /// Tags for categorization and filtering. Propagated to children at read time.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
     /// Arbitrary JSON for orchestrators, agents, and workflow engines.
     /// complex stores it and ignores it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -75,6 +78,7 @@ impl Node {
             shadowed: false,
             part: None,
             filed_by: None,
+            tags: vec![],
             created_at: now,
             updated_at: now,
             meta: None,
@@ -147,11 +151,29 @@ impl Graph {
                         && e.edge_type == EdgeType::Blocks
                         && self
                             .get_node(&e.from)
-                            .map_or(false, |b| b.state != State::Integrated)
+                            .is_some_and(|b| b.state != State::Integrated)
                 })
             })
             .map(|n| n.id.clone())
             .collect()
+    }
+
+    /// Compute effective tags for a node: own tags + all ancestor tags (deduplicated).
+    pub fn effective_tags(&self, id: &str) -> Vec<String> {
+        let mut tags = std::collections::BTreeSet::new();
+        // Collect own tags
+        if let Some(node) = self.get_node(id) {
+            tags.extend(node.tags.iter().cloned());
+        }
+        // Walk up ancestor chain via the hierarchical ID
+        let mut cur = id.to_string();
+        while let Some(dot) = cur.rfind('.') {
+            cur = cur[..dot].to_string();
+            if let Some(ancestor) = self.get_node(&cur) {
+                tags.extend(ancestor.tags.iter().cloned());
+            }
+        }
+        tags.into_iter().collect()
     }
 
     /// Returns true if adding a blocks edge from `from` to `to` would create a cycle.

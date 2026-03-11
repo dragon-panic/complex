@@ -18,6 +18,16 @@
       "part": null,
       "created_at": "2026-03-08T00:10:35.992014112Z",
       "updated_at": "2026-03-08T00:10:35.992014112Z"
+    },
+    {
+      "id": "kZy2",
+      "title": "bug: cx block missing --reason flag",
+      "state": "ready",
+      "shadowed": false,
+      "part": null,
+      "created_at": "2026-03-10T16:31:34.238694724Z",
+      "updated_at": "2026-03-10T16:31:34.249227893Z",
+      "filed_by": "seguro:claude"
     }
   ],
   "edges": []

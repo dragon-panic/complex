@@ -39,6 +39,9 @@ enum Commands {
         /// Who/what is filing this (falls back to CX_FILED_BY env var)
         #[arg(long)]
         by: Option<String>,
+        /// Add tags to the node
+        #[arg(long, value_name = "TAG")]
+        tag: Vec<String>,
     },
 
     /// Create a child node under a parent
@@ -54,6 +57,9 @@ enum Commands {
         /// Who/what is filing this (falls back to CX_FILED_BY env var)
         #[arg(long)]
         by: Option<String>,
+        /// Add tags to the node
+        #[arg(long, value_name = "TAG")]
+        tag: Vec<String>,
     },
 
     /// List ready nodes, or promote latent nodes to ready
@@ -113,7 +119,12 @@ enum Commands {
     Show { id: String },
 
     /// Show the full hierarchy with states
-    Tree { id: Option<String> },
+    Tree {
+        id: Option<String>,
+        /// Filter by effective tag (own + inherited)
+        #[arg(long, value_name = "TAG")]
+        tag: Option<String>,
+    },
 
     /// Show claimed nodes grouped by part
     Parts,
@@ -175,9 +186,29 @@ enum Commands {
     /// Mark node A as discovered while working on node B
     Discover { a: String, b: String },
 
+    /// Add a tag to a node
+    Tag {
+        id: String,
+        tag: String,
+    },
+
+    /// Remove a tag from a node
+    Untag {
+        id: String,
+        tag: String,
+    },
+
+    /// Show effective tags for a node, or list all tags in use
+    Tags {
+        id: Option<String>,
+    },
+
     /// Search nodes by title (case-insensitive substring match)
     Find {
         query: Vec<String>,
+        /// Filter by effective tag (own + inherited)
+        #[arg(long, value_name = "TAG")]
+        tag: Option<String>,
     },
 
     /// List all nodes, optionally filtered by state or filer
@@ -187,6 +218,9 @@ enum Commands {
         /// Filter by who filed the node
         #[arg(long, value_name = "WHO")]
         filed_by: Option<String>,
+        /// Filter by effective tag (own + inherited)
+        #[arg(long, value_name = "TAG")]
+        tag: Option<String>,
     },
 
     /// Read or write arbitrary metadata on a node (JSON blob)
@@ -223,8 +257,8 @@ fn main() {
 fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Init { ephemeral } => cmd_init(ephemeral),
-        Commands::Add { title, body, body_file, by } => cmd_add(title.join(" "), body, body_file, by, cli.json),
-        Commands::New { parent_id, title, body, body_file, by } => cmd_new(parent_id, title.join(" "), body, body_file, by, cli.json),
+        Commands::Add { title, body, body_file, by, tag } => cmd_add(title.join(" "), body, body_file, by, tag, cli.json),
+        Commands::New { parent_id, title, body, body_file, by, tag } => cmd_new(parent_id, title.join(" "), body, body_file, by, tag, cli.json),
         Commands::Surface { ids, reason, all } => cmd_surface(ids, reason, all, cli.json),
         Commands::Claim { id, r#as, reason } => cmd_claim(id, r#as, reason, cli.json),
         Commands::Unclaim { id, reason } => cmd_unclaim(id, reason, cli.json),
@@ -232,7 +266,10 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Shadow { id, reason } => cmd_shadow(id, reason, cli.json),
         Commands::Unshadow { id, reason } => cmd_unshadow(id, reason, cli.json),
         Commands::Show { id } => cmd_show(id, cli.json),
-        Commands::Tree { id } => cmd_tree(id, cli.json),
+        Commands::Tag { id, tag } => cmd_tag(id, tag, cli.json),
+        Commands::Untag { id, tag } => cmd_untag(id, tag, cli.json),
+        Commands::Tags { id } => cmd_tags(id, cli.json),
+        Commands::Tree { id, tag } => cmd_tree(id, tag, cli.json),
         Commands::Parts => cmd_parts(cli.json),
         Commands::Therapy => cmd_therapy(cli.json),
         Commands::Move { id, new_parent, root, reason } => cmd_move(id, new_parent, root, reason, cli.json),
@@ -243,8 +280,8 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Unblock { a, b } => cmd_edge(a, b, EdgeType::Blocks, true, cli.json),
         Commands::Relate { a, b } => cmd_edge(a, b, EdgeType::Related, false, cli.json),
         Commands::Discover { a, b } => cmd_edge(a, b, EdgeType::DiscoveredFrom, false, cli.json),
-        Commands::Find { query } => cmd_find(query.join(" "), cli.json),
-        Commands::List { state, filed_by } => cmd_list(state, filed_by, cli.json),
+        Commands::Find { query, tag } => cmd_find(query.join(" "), tag, cli.json),
+        Commands::List { state, filed_by, tag } => cmd_list(state, filed_by, tag, cli.json),
         Commands::Agent => { print!("{}", AGENT_GUIDE); Ok(()) },
         Commands::Meta { id, value } => cmd_meta(id, value, cli.json),
         Commands::Log { limit } => cmd_log(limit, cli.json),
@@ -286,6 +323,19 @@ fn set_reason(node: &mut model::Node, reason: &str) {
     if let Some(obj) = meta.as_object_mut() {
         obj.insert("_reason".to_string(), serde_json::json!(reason));
     }
+}
+
+/// Returns true if a node or any descendant has the given effective tag.
+fn subtree_has_tag(graph: &model::Graph, node_id: &str, tag: &str) -> bool {
+    if graph.effective_tags(node_id).iter().any(|t| t == tag) {
+        return true;
+    }
+    for child in graph.children(node_id) {
+        if subtree_has_tag(graph, &child.id, tag) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Returns the ID of the first ancestor (or self) that has an unresolved blocker,
@@ -352,6 +402,9 @@ cx add <title> --body "markdown"  create with body in one shot (also works on cx
 cx add <title> --by <who>        record who filed this (or set CX_FILED_BY)
 cx discover <new-id> <source-id>  record task found while working on source
 cx find <query>                   search nodes by title (case-insensitive)
+cx tag <id> <tag>                 add a tag to a node
+cx untag <id> <tag>               remove a tag from a node
+cx tags [id]                      show effective tags (own + inherited) or list all
 cx rename <id> <new title>        rename a node
 cx move <id> <new-parent>         reparent a node (and children) under a new parent
 cx move <id> --root               promote a node to root level
@@ -450,7 +503,7 @@ fn cmd_init(ephemeral: bool) -> Result<()> {
 
 // ── add / new ─────────────────────────────────────────────────────────────────
 
-fn cmd_add(title: String, body: Option<String>, body_file: Option<String>, by: Option<String>, json: bool) -> Result<()> {
+fn cmd_add(title: String, body: Option<String>, body_file: Option<String>, by: Option<String>, tags: Vec<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let mut graph = store::load(&root)?;
 
@@ -459,6 +512,7 @@ fn cmd_add(title: String, body: Option<String>, body_file: Option<String>, by: O
     let new_id = id::generate(None);
     let mut node = model::Node::new(new_id.clone(), title.clone());
     node.filed_by = filed_by;
+    node.tags = tags;
     graph.nodes.push(node);
     store::save(&root, &graph)?;
 
@@ -481,7 +535,7 @@ fn cmd_add(title: String, body: Option<String>, body_file: Option<String>, by: O
     Ok(())
 }
 
-fn cmd_new(parent_partial: String, title: String, body: Option<String>, body_file: Option<String>, by: Option<String>, json: bool) -> Result<()> {
+fn cmd_new(parent_partial: String, title: String, body: Option<String>, body_file: Option<String>, by: Option<String>, tags: Vec<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let mut graph = store::load(&root)?;
 
@@ -492,6 +546,7 @@ fn cmd_new(parent_partial: String, title: String, body: Option<String>, body_fil
     let new_id = id::generate(Some(&parent_id));
     let mut node = model::Node::new(new_id.clone(), title.clone());
     node.filed_by = filed_by;
+    node.tags = tags;
     graph.nodes.push(node);
     store::save(&root, &graph)?;
 
@@ -735,7 +790,7 @@ fn cmd_integrate(partial: String, reason: Option<String>, json: bool) -> Result<
             // Y must be latent
             graph
                 .get_node(y_id)
-                .map_or(false, |n| n.state == State::Latent)
+                .is_some_and(|n| n.state == State::Latent)
             // Y must have no other non-integrated blockers besides `resolved`
             && !graph.edges.iter().any(|e| {
                 e.to == *y_id
@@ -743,16 +798,21 @@ fn cmd_integrate(partial: String, reason: Option<String>, json: bool) -> Result<
                     && e.from != resolved
                     && graph
                         .get_node(&e.from)
-                        .map_or(false, |b| b.state != State::Integrated)
+                        .is_some_and(|b| b.state != State::Integrated)
             })
         })
         .collect();
+
+    // Snapshot effective tags before archiving (parent tree may be gone later)
+    let effective_tags = graph.effective_tags(&resolved);
 
     {
         let node = graph
             .get_node_mut(&resolved)
             .ok_or_else(|| anyhow::anyhow!("node not found: {}", resolved))?;
         node.state = State::Integrated;
+        // Denormalize: bake effective tags into the archived node
+        node.tags = effective_tags;
         node.touch();
         if let Some(r) = &reason {
             set_reason(node, r);
@@ -902,6 +962,8 @@ fn cmd_show(partial: String, json: bool) -> Result<()> {
 
     let children = graph.children(&resolved);
 
+    let effective_tags = graph.effective_tags(&resolved);
+
     if json {
         println!(
             "{}",
@@ -912,6 +974,8 @@ fn cmd_show(partial: String, json: bool) -> Result<()> {
                 "shadowed": node.shadowed,
                 "part": node.part,
                 "filed_by": node.filed_by,
+                "tags": node.tags,
+                "effective_tags": effective_tags,
                 "meta": node.meta,
                 "created_at": node.created_at,
                 "updated_at": node.updated_at,
@@ -934,6 +998,13 @@ fn cmd_show(partial: String, json: bool) -> Result<()> {
         }
         if let Some(f) = &node.filed_by {
             println!("filed by: {}", f);
+        }
+        if !effective_tags.is_empty() {
+            let own_set: std::collections::HashSet<&String> = node.tags.iter().collect();
+            let display: Vec<String> = effective_tags.iter().map(|t| {
+                if own_set.contains(t) { t.clone() } else { format!("{} (inherited)", t) }
+            }).collect();
+            println!("tags:     {}", display.join(", "));
         }
         if let Some(r) = node.meta.as_ref().and_then(|m| m["_reason"].as_str()) {
             println!("reason:   {}", r);
@@ -968,27 +1039,34 @@ fn cmd_show(partial: String, json: bool) -> Result<()> {
 
 // ── tree ──────────────────────────────────────────────────────────────────────
 
-fn cmd_tree(root_id: Option<String>, json: bool) -> Result<()> {
+fn cmd_tree(root_id: Option<String>, tag_filter: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let graph = store::load(&root)?;
 
     if json {
-        fn node_to_tree(graph: &model::Graph, node: &model::Node) -> serde_json::Value {
+        fn node_to_tree(graph: &model::Graph, node: &model::Node, tag_filter: &Option<String>) -> Option<serde_json::Value> {
+            if let Some(tag) = tag_filter
+                && !subtree_has_tag(graph, &node.id, tag) {
+                    return None;
+            }
             let mut children = graph.children(&node.id);
             children.sort_by(|a, b| a.id.cmp(&b.id));
             let child_trees: Vec<serde_json::Value> = children
                 .iter()
-                .map(|c| node_to_tree(graph, c))
+                .filter_map(|c| node_to_tree(graph, c, tag_filter))
                 .collect();
-            serde_json::json!({
+            let effective = graph.effective_tags(&node.id);
+            Some(serde_json::json!({
                 "id": node.id,
                 "title": node.title,
                 "state": node.state.to_string(),
                 "shadowed": node.shadowed,
                 "part": node.part,
                 "filed_by": node.filed_by,
+                "tags": node.tags,
+                "effective_tags": effective,
                 "children": child_trees,
-            })
+            }))
         }
 
         let tree_roots: Vec<&model::Node> = match &root_id {
@@ -1003,7 +1081,7 @@ fn cmd_tree(root_id: Option<String>, json: bool) -> Result<()> {
 
         let out: Vec<serde_json::Value> = tree_roots
             .iter()
-            .map(|r| node_to_tree(&graph, r))
+            .filter_map(|r| node_to_tree(&graph, r, &tag_filter))
             .collect();
         println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(());
@@ -1019,7 +1097,11 @@ fn cmd_tree(root_id: Option<String>, json: bool) -> Result<()> {
         None => graph.roots(),
     };
 
-    fn print_node(graph: &model::Graph, node: &model::Node, depth: usize) {
+    fn print_node(graph: &model::Graph, node: &model::Node, depth: usize, tag_filter: &Option<String>) {
+        if let Some(tag) = tag_filter
+            && !subtree_has_tag(graph, &node.id, tag) {
+                return;
+        }
         let indent = "  ".repeat(depth);
         let shadow = if node.shadowed { " [shadowed]" } else { "" };
         let part = node
@@ -1027,24 +1109,29 @@ fn cmd_tree(root_id: Option<String>, json: bool) -> Result<()> {
             .as_deref()
             .map(|p| format!("  :{}", p))
             .unwrap_or_default();
+        let tags_str = if node.tags.is_empty() {
+            String::new()
+        } else {
+            format!("  #{}", node.tags.join(" #"))
+        };
         let leaf = if depth > 0 {
             node.id.rfind('.').map(|i| &node.id[i + 1..]).unwrap_or(&node.id)
         } else {
             &node.id
         };
         println!(
-            "{}{}  {}  [{}{}]{}",
-            indent, leaf, node.title, node.state, shadow, part
+            "{}{}  {}  [{}{}]{}{}",
+            indent, leaf, node.title, node.state, shadow, part, tags_str
         );
         let mut children = graph.children(&node.id);
         children.sort_by(|a, b| a.id.cmp(&b.id));
         for child in children {
-            print_node(graph, child, depth + 1);
+            print_node(graph, child, depth + 1, tag_filter);
         }
     }
 
     for node in roots {
-        print_node(&graph, node, 0);
+        print_node(&graph, node, 0, &tag_filter);
     }
     Ok(())
 }
@@ -1416,9 +1503,107 @@ fn cmd_edge(
     Ok(())
 }
 
+// ── tag / untag / tags ────────────────────────────────────────────────────
+
+fn cmd_tag(partial: String, tag: String, json: bool) -> Result<()> {
+    let root = store::find_root()?;
+    let mut graph = store::load(&root)?;
+    let resolved = id::resolve(&graph, &partial)?;
+
+    let node = graph
+        .get_node_mut(&resolved)
+        .ok_or_else(|| anyhow::anyhow!("node not found: {}", resolved))?;
+    if !node.tags.contains(&tag) {
+        node.tags.push(tag.clone());
+        node.tags.sort();
+        node.touch();
+    }
+    store::save(&root, &graph)?;
+    emit(&root, "tag", &resolved, None, Some(&tag), None);
+
+    if json {
+        println!("{}", serde_json::json!({ "id": resolved, "tag": tag }));
+    } else {
+        println!("tagged  {}  +{}", resolved, tag);
+    }
+    Ok(())
+}
+
+fn cmd_untag(partial: String, tag: String, json: bool) -> Result<()> {
+    let root = store::find_root()?;
+    let mut graph = store::load(&root)?;
+    let resolved = id::resolve(&graph, &partial)?;
+
+    let node = graph
+        .get_node_mut(&resolved)
+        .ok_or_else(|| anyhow::anyhow!("node not found: {}", resolved))?;
+    let before = node.tags.len();
+    node.tags.retain(|t| t != &tag);
+    if node.tags.len() < before {
+        node.touch();
+    }
+    store::save(&root, &graph)?;
+    emit(&root, "untag", &resolved, None, Some(&tag), None);
+
+    if json {
+        println!("{}", serde_json::json!({ "id": resolved, "tag": tag }));
+    } else {
+        println!("untagged  {}  -{}", resolved, tag);
+    }
+    Ok(())
+}
+
+fn cmd_tags(partial: Option<String>, json: bool) -> Result<()> {
+    let root = store::find_root()?;
+    let graph = store::load(&root)?;
+
+    match partial {
+        Some(p) => {
+            let resolved = id::resolve(&graph, &p)?;
+            let own = graph
+                .get_node(&resolved)
+                .map(|n| n.tags.clone())
+                .unwrap_or_default();
+            let effective = graph.effective_tags(&resolved);
+            if json {
+                println!("{}", serde_json::json!({
+                    "id": resolved,
+                    "own": own,
+                    "effective": effective,
+                }));
+            } else if effective.is_empty() {
+                println!("no tags on {}", resolved);
+            } else {
+                for t in &effective {
+                    let marker = if own.contains(t) { "" } else { " (inherited)" };
+                    println!("  {}{}", t, marker);
+                }
+            }
+        }
+        None => {
+            // List all tags in use across the graph
+            let mut all_tags = std::collections::BTreeSet::new();
+            for node in &graph.nodes {
+                all_tags.extend(node.tags.iter().cloned());
+            }
+            if json {
+                let tags: Vec<&String> = all_tags.iter().collect();
+                println!("{}", serde_json::to_string_pretty(&tags)?);
+            } else if all_tags.is_empty() {
+                println!("no tags in use");
+            } else {
+                for t in &all_tags {
+                    println!("  {}", t);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 // ── find ──────────────────────────────────────────────────────────────────
 
-fn cmd_find(query: String, json: bool) -> Result<()> {
+fn cmd_find(query: String, tag_filter: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let graph = store::load(&root)?;
     let q = query.to_lowercase();
@@ -1427,6 +1612,10 @@ fn cmd_find(query: String, json: bool) -> Result<()> {
         .nodes
         .iter()
         .filter(|n| n.title.to_lowercase().contains(&q))
+        .filter(|n| match &tag_filter {
+            Some(t) => graph.effective_tags(&n.id).contains(t),
+            None => true,
+        })
         .collect();
 
     if json {
@@ -1454,7 +1643,7 @@ fn cmd_find(query: String, json: bool) -> Result<()> {
 
 // ── list ──────────────────────────────────────────────────────────────────────
 
-fn cmd_list(state_filter: Option<String>, filed_by_filter: Option<String>, json: bool) -> Result<()> {
+fn cmd_list(state_filter: Option<String>, filed_by_filter: Option<String>, tag_filter: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let graph = store::load(&root)?;
 
@@ -1469,6 +1658,10 @@ fn cmd_list(state_filter: Option<String>, filed_by_filter: Option<String>, json:
             Some(f) => n.filed_by.as_deref() == Some(f.as_str()),
             None => true,
         })
+        .filter(|n| match &tag_filter {
+            Some(t) => graph.effective_tags(&n.id).contains(t),
+            None => true,
+        })
         .collect();
 
     if json {
@@ -1480,6 +1673,8 @@ fn cmd_list(state_filter: Option<String>, filed_by_filter: Option<String>, json:
                     "state": n.state.to_string(),
                     "shadowed": n.shadowed, "part": n.part,
                     "filed_by": n.filed_by,
+                    "tags": n.tags,
+                    "effective_tags": graph.effective_tags(&n.id),
                 })
             })
             .collect();
@@ -1490,7 +1685,12 @@ fn cmd_list(state_filter: Option<String>, filed_by_filter: Option<String>, json:
         for n in &nodes {
             let shadow = if n.shadowed { " [shadowed]" } else { "" };
             let part = n.part.as_deref().unwrap_or("—");
-            println!("{:<20}  {:<40}  {:<12}  {}{}", n.id, n.title, n.state, part, shadow);
+            let tags_str = if n.tags.is_empty() {
+                String::new()
+            } else {
+                format!("  #{}", n.tags.join(" #"))
+            };
+            println!("{:<20}  {:<40}  {:<12}  {}{}{}", n.id, n.title, n.state, part, shadow, tags_str);
         }
     }
     Ok(())
@@ -1566,6 +1766,7 @@ fn cmd_status(json: bool) -> Result<()> {
                 .iter()
                 .map(|c| node_to_tree(graph, c))
                 .collect();
+            let effective = graph.effective_tags(&node.id);
             serde_json::json!({
                 "id": node.id,
                 "title": node.title,
@@ -1573,6 +1774,8 @@ fn cmd_status(json: bool) -> Result<()> {
                 "shadowed": node.shadowed,
                 "part": node.part,
                 "filed_by": node.filed_by,
+                "tags": node.tags,
+                "effective_tags": effective,
                 "children": child_trees,
             })
         }
@@ -1602,14 +1805,19 @@ fn cmd_status(json: bool) -> Result<()> {
                 .as_deref()
                 .map(|p| format!("  :{}", p))
                 .unwrap_or_default();
+            let tags_str = if node.tags.is_empty() {
+                String::new()
+            } else {
+                format!("  #{}", node.tags.join(" #"))
+            };
             let leaf = if depth > 0 {
                 node.id.rfind('.').map(|i| &node.id[i + 1..]).unwrap_or(&node.id)
             } else {
                 &node.id
             };
             println!(
-                "{}{}  {}  [{}{}]{}",
-                indent, leaf, node.title, node.state, shadow, part
+                "{}{}  {}  [{}{}]{}{}",
+                indent, leaf, node.title, node.state, shadow, part, tags_str
             );
             let mut children = graph.children(&node.id);
             children.sort_by(|a, b| a.id.cmp(&b.id));

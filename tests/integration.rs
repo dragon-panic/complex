@@ -2087,3 +2087,284 @@ fn surface_all_human_readable_output() {
         .stdout(contains(&b))
         .stdout(contains("→ ready"));
 }
+
+// ── tag tests ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn tag_and_untag_basic() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let root = add(&dir, "root");
+
+    cx(&dir).args(["tag", &root, "phase:alpha"]).assert().success()
+        .stdout(contains("+phase:alpha"));
+
+    // Show should display the tag
+    let out = cx(&dir).args(["--json", "show", &root]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["tags"], serde_json::json!(["phase:alpha"]));
+    assert_eq!(v["effective_tags"], serde_json::json!(["phase:alpha"]));
+
+    // Untag
+    cx(&dir).args(["untag", &root, "phase:alpha"]).assert().success()
+        .stdout(contains("-phase:alpha"));
+
+    let out = cx(&dir).args(["--json", "show", &root]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["tags"], serde_json::json!([]));
+}
+
+#[test]
+fn tag_idempotent() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let root = add(&dir, "root");
+
+    cx(&dir).args(["tag", &root, "v1"]).assert().success();
+    cx(&dir).args(["tag", &root, "v1"]).assert().success();
+
+    let out = cx(&dir).args(["--json", "show", &root]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["tags"], serde_json::json!(["v1"]), "tag should not be duplicated");
+}
+
+#[test]
+fn tag_propagation_parent_to_child() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let root = add(&dir, "root");
+    let child = new_child(&dir, &root, "child");
+    let grandchild = new_child(&dir, &child, "grandchild");
+
+    // Tag the root
+    cx(&dir).args(["tag", &root, "phase:beta"]).assert().success();
+
+    // Child and grandchild should inherit via effective_tags
+    let out = cx(&dir).args(["--json", "show", &child]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["tags"], serde_json::json!([]), "child has no own tags");
+    assert_eq!(v["effective_tags"], serde_json::json!(["phase:beta"]), "child inherits parent tag");
+
+    let out = cx(&dir).args(["--json", "show", &grandchild]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["effective_tags"], serde_json::json!(["phase:beta"]), "grandchild inherits through chain");
+}
+
+#[test]
+fn tag_union_own_and_inherited() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let root = add(&dir, "root");
+    let child = new_child(&dir, &root, "child");
+
+    cx(&dir).args(["tag", &root, "team:platform"]).assert().success();
+    cx(&dir).args(["tag", &child, "sprint:3"]).assert().success();
+
+    let out = cx(&dir).args(["--json", "show", &child]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["tags"], serde_json::json!(["sprint:3"]), "child has own tag");
+    let effective = v["effective_tags"].as_array().unwrap();
+    assert!(effective.contains(&serde_json::json!("sprint:3")));
+    assert!(effective.contains(&serde_json::json!("team:platform")));
+}
+
+#[test]
+fn tag_on_add_and_new() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+
+    let out = cx(&dir)
+        .args(["--json", "add", "root", "--tag", "v1", "--tag", "alpha"])
+        .output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let root = v["id"].as_str().unwrap().to_string();
+
+    let out = cx(&dir).args(["--json", "show", &root]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let tags = v["tags"].as_array().unwrap();
+    assert!(tags.contains(&serde_json::json!("v1")));
+    assert!(tags.contains(&serde_json::json!("alpha")));
+
+    // cx new with --tag
+    let out = cx(&dir)
+        .args(["--json", "new", &root, "child", "--tag", "sprint:1"])
+        .output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let child = v["id"].as_str().unwrap().to_string();
+
+    let out = cx(&dir).args(["--json", "show", &child]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["tags"], serde_json::json!(["sprint:1"]));
+}
+
+#[test]
+fn tag_list_filter() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "alpha-task");
+    let b = add(&dir, "beta-task");
+
+    cx(&dir).args(["tag", &a, "team:a"]).assert().success();
+    cx(&dir).args(["tag", &b, "team:b"]).assert().success();
+
+    let out = cx(&dir).args(["--json", "list", "--tag", "team:a"]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ids: Vec<&str> = v.as_array().unwrap().iter().map(|n| n["id"].as_str().unwrap()).collect();
+    assert!(ids.contains(&a.as_str()));
+    assert!(!ids.contains(&b.as_str()));
+}
+
+#[test]
+fn tag_list_filter_inherited() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let root = add(&dir, "root");
+    let child = new_child(&dir, &root, "child");
+
+    cx(&dir).args(["tag", &root, "project:x"]).assert().success();
+
+    // list --tag project:x should find the child too (inherited)
+    let out = cx(&dir).args(["--json", "list", "--tag", "project:x"]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ids: Vec<&str> = v.as_array().unwrap().iter().map(|n| n["id"].as_str().unwrap()).collect();
+    assert!(ids.contains(&root.as_str()));
+    assert!(ids.contains(&child.as_str()));
+}
+
+#[test]
+fn tags_command_lists_all() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "a");
+    let b = add(&dir, "b");
+
+    cx(&dir).args(["tag", &a, "team:a"]).assert().success();
+    cx(&dir).args(["tag", &b, "team:b"]).assert().success();
+
+    let out = cx(&dir).args(["--json", "tags"]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let tags: Vec<&str> = v.as_array().unwrap().iter().map(|t| t.as_str().unwrap()).collect();
+    assert!(tags.contains(&"team:a"));
+    assert!(tags.contains(&"team:b"));
+}
+
+#[test]
+fn tags_command_shows_inherited() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let root = add(&dir, "root");
+    let child = new_child(&dir, &root, "child");
+
+    cx(&dir).args(["tag", &root, "phase:1"]).assert().success();
+    cx(&dir).args(["tag", &child, "own:tag"]).assert().success();
+
+    let out = cx(&dir).args(["--json", "tags", &child]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let own: Vec<&str> = v["own"].as_array().unwrap().iter().map(|t| t.as_str().unwrap()).collect();
+    let effective: Vec<&str> = v["effective"].as_array().unwrap().iter().map(|t| t.as_str().unwrap()).collect();
+    assert_eq!(own, vec!["own:tag"]);
+    assert!(effective.contains(&"own:tag"));
+    assert!(effective.contains(&"phase:1"));
+}
+
+#[test]
+fn tag_denormalized_on_archive() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let root = add(&dir, "root");
+    let child = new_child(&dir, &root, "child");
+
+    cx(&dir).args(["tag", &root, "release:v1"]).assert().success();
+
+    // Integrate the child — it should get effective tags baked in
+    surface_id(&dir, &child);
+    integrate(&dir, &child);
+
+    // Read archive.jsonl and verify the child has the inherited tag
+    let archive_path = dir.path().join(".complex/archive/archive.jsonl");
+    let raw = std::fs::read_to_string(&archive_path).unwrap();
+    let archived: serde_json::Value = serde_json::from_str(raw.lines().last().unwrap()).unwrap();
+    assert_eq!(archived["id"].as_str().unwrap(), child);
+    let tags: Vec<&str> = archived["tags"].as_array().unwrap().iter()
+        .map(|t| t.as_str().unwrap()).collect();
+    assert!(tags.contains(&"release:v1"), "archived node should have inherited tag baked in");
+}
+
+#[test]
+fn tag_tree_filter() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "tagged-root");
+    let b = add(&dir, "untagged-root");
+    let _child = new_child(&dir, &a, "child-of-tagged");
+
+    cx(&dir).args(["tag", &a, "focus"]).assert().success();
+
+    let out = cx(&dir).args(["--json", "tree", "--tag", "focus"]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ids: Vec<&str> = v.as_array().unwrap().iter().map(|n| n["id"].as_str().unwrap()).collect();
+    assert!(ids.contains(&a.as_str()), "tagged root should appear");
+    assert!(!ids.iter().any(|id| *id == b), "untagged root should be filtered out");
+}
+
+#[test]
+fn tag_find_filter() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "deploy service");
+    let b = add(&dir, "deploy database");
+
+    cx(&dir).args(["tag", &a, "team:sre"]).assert().success();
+    cx(&dir).args(["tag", &b, "team:dba"]).assert().success();
+
+    let out = cx(&dir).args(["--json", "find", "deploy", "--tag", "team:sre"]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ids: Vec<&str> = v.as_array().unwrap().iter().map(|n| n["id"].as_str().unwrap()).collect();
+    assert!(ids.contains(&a.as_str()));
+    assert!(!ids.contains(&b.as_str()));
+}
+
+#[test]
+fn tag_sorted_on_node() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let root = add(&dir, "root");
+
+    cx(&dir).args(["tag", &root, "z-tag"]).assert().success();
+    cx(&dir).args(["tag", &root, "a-tag"]).assert().success();
+
+    let out = cx(&dir).args(["--json", "show", &root]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["tags"], serde_json::json!(["a-tag", "z-tag"]), "tags should be sorted");
+}
+
+#[test]
+fn tag_serde_compat_no_tags_field() {
+    // Existing graph.json without tags field should still load (serde default)
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+
+    // Write a graph.json manually without the tags field
+    let graph_path = dir.path().join(".complex/graph.json");
+    let graph = r#"{
+        "version": 1,
+        "nodes": [{
+            "id": "ABCD",
+            "title": "legacy node",
+            "state": "latent",
+            "shadowed": false,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z"
+        }],
+        "edges": []
+    }"#;
+    std::fs::write(&graph_path, graph).unwrap();
+
+    // Should load fine and show empty tags
+    let out = cx(&dir).args(["--json", "show", "ABCD"]).output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["tags"], serde_json::json!([]));
+}

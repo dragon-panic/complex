@@ -154,8 +154,11 @@ cx show bX7c         # node detail + body
 | `cx unshadow <id>` | Clear shadow flag |
 | `cx show <id>` | Node detail: title, body, edges, children |
 | `cx tree [id]` | Full hierarchy with states |
+| `cx tag <id> <tag>` | Add a tag to a node |
+| `cx untag <id> <tag>` | Remove a tag from a node |
+| `cx tags [id]` | Show effective tags (own + inherited) or list all in use |
 | `cx find <query>` | Search nodes by title (case-insensitive) |
-| `cx list [--state <s>] [--filed-by <who>]` | All nodes, optionally filtered |
+| `cx list [--state <s>] [--filed-by <who>] [--tag <t>]` | All nodes, optionally filtered |
 | `cx parts` | Claimed nodes grouped by part |
 | `cx therapy` | Stale, shadowed, and orphan body files |
 | `cx rename <id> <title>` | Rename a node's title |
@@ -169,7 +172,16 @@ cx show bX7c         # node detail + body
 
 All mutation commands accept `--reason "..."` to record rationale (stored in
 `events.jsonl` and `meta._reason`). All commands support `--json` for
-machine-readable output.
+machine-readable output. `cx add` and `cx new` accept `--tag <tag>` (repeatable).
+
+### Tags
+
+Tags propagate from parent to children automatically at read time.
+A child's **effective tags** = own tags + all ancestor tags (union, deduplicated).
+Tags are stored only where explicitly set — no denormalization in the live graph.
+
+On `cx integrate`, effective tags are baked into the archived record so
+reporting works even after the parent tree is gone.
 
 ## Environment
 

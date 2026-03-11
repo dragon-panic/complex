@@ -75,3 +75,27 @@
 {"ts":"2026-03-08T23:26:40.720429322+00:00","action":"surface","node_id":"6lgG"}
 {"ts":"2026-03-08T23:26:40.722068225+00:00","action":"claim","node_id":"6lgG","part":"claude"}
 {"ts":"2026-03-08T23:33:20.505866761+00:00","action":"integrate","node_id":"6lgG","reason":"cx move/mv command with tests"}
+{"ts":"2026-03-10T16:31:34.239103829+00:00","action":"create","node_id":"kZy2","detail":"bug: cx block missing --reason flag"}
+{"ts":"2026-03-10T16:31:34.249228263+00:00","action":"surface","node_id":"kZy2"}
+{"ts":"2026-03-11T17:22:50.539434448+00:00","action":"create","node_id":"KfdK","detail":"Feature: tag propagation from parent to children"}
+{"ts":"2026-03-11T17:32:30.790723482+00:00","action":"edit","node_id":"KfdK"}
+{"ts":"2026-03-11T17:32:35.506884460+00:00","action":"create","node_id":"KfdK.ty9q","detail":"Add tags field to Node model + serde default + graph version migration"}
+{"ts":"2026-03-11T17:32:35.508238061+00:00","action":"create","node_id":"KfdK.eFJt","detail":"Add cx tag / cx untag commands"}
+{"ts":"2026-03-11T17:32:35.509592812+00:00","action":"create","node_id":"KfdK.RmIq","detail":"Add effective_tags() computation — walk ancestor IDs"}
+{"ts":"2026-03-11T17:32:35.511092858+00:00","action":"create","node_id":"KfdK.BRhG","detail":"Materialize effective tags in SQLite db layer"}
+{"ts":"2026-03-11T17:32:35.512341403+00:00","action":"create","node_id":"KfdK.CuVI","detail":"Add --tag filter to list, find, tree"}
+{"ts":"2026-03-11T17:32:35.513963365+00:00","action":"create","node_id":"KfdK.8iso","detail":"Denormalize effective tags into archive on integrate"}
+{"ts":"2026-03-11T17:32:35.515295986+00:00","action":"create","node_id":"KfdK.Ko7X","detail":"Add --tag flag to cx add / cx new"}
+{"ts":"2026-03-11T17:32:35.516827411+00:00","action":"create","node_id":"KfdK.kfg1","detail":"Tests for tag propagation"}
+{"ts":"2026-03-11T17:32:39.684606070+00:00","action":"surface","node_id":"KfdK.ty9q"}
+{"ts":"2026-03-11T17:32:39.685922143+00:00","action":"surface","node_id":"KfdK.kfg1"}
+{"ts":"2026-03-11T17:34:11.370374056+00:00","action":"claim","node_id":"KfdK.ty9q","part":"claude"}
+{"ts":"2026-03-11T17:42:08.437560462+00:00","action":"integrate","node_id":"KfdK.ty9q","reason":"added tags field to Node, serde default for backwards compat"}
+{"ts":"2026-03-11T17:42:08.438993900+00:00","action":"integrate","node_id":"KfdK.eFJt","reason":"tag/untag/tags commands implemented"}
+{"ts":"2026-03-11T17:42:08.440495505+00:00","action":"integrate","node_id":"KfdK.RmIq","reason":"effective_tags() on Graph walks ancestor IDs"}
+{"ts":"2026-03-11T17:42:08.442084128+00:00","action":"integrate","node_id":"KfdK.BRhG","reason":"skipped — filtering done in Rust, not SQL materialization"}
+{"ts":"2026-03-11T17:42:08.443580784+00:00","action":"integrate","node_id":"KfdK.CuVI","reason":"list/find/tree all accept --tag filter"}
+{"ts":"2026-03-11T17:42:08.445043831+00:00","action":"integrate","node_id":"KfdK.8iso","reason":"effective tags baked into archived node on integrate"}
+{"ts":"2026-03-11T17:42:08.446429390+00:00","action":"integrate","node_id":"KfdK.Ko7X","reason":"add/new accept --tag flag"}
+{"ts":"2026-03-11T17:42:08.447864698+00:00","action":"integrate","node_id":"KfdK.kfg1","reason":"14 integration tests covering all tag behaviors"}
+{"ts":"2026-03-11T17:42:08.449208939+00:00","action":"integrate","node_id":"KfdK","reason":"complete — all subtasks done"}
