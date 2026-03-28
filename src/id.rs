@@ -1,16 +1,25 @@
+use std::collections::HashSet;
+
 use anyhow::{bail, Result};
 use crate::model::Graph;
 
 const B62: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const MAX_RETRIES: usize = 10;
 
-pub fn generate(parent: Option<&str>) -> String {
-    let seg: String = (0..4)
-        .map(|_| B62[rand::random::<usize>() % 62] as char)
-        .collect();
-    match parent {
-        Some(p) => format!("{}.{}", p, seg),
-        None => seg,
+pub fn generate(parent: Option<&str>, existing: &HashSet<String>) -> Result<String> {
+    for _ in 0..MAX_RETRIES {
+        let seg: String = (0..4)
+            .map(|_| B62[rand::random::<usize>() % 62] as char)
+            .collect();
+        let full = match parent {
+            Some(p) => format!("{}.{}", p, seg),
+            None => seg,
+        };
+        if !existing.contains(&full) {
+            return Ok(full);
+        }
     }
+    bail!("failed to generate unique ID after {} attempts", MAX_RETRIES)
 }
 
 /// Resolve a possibly-short id (leaf segment) to a full id.

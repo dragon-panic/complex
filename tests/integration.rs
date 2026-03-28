@@ -49,6 +49,10 @@ fn integrate(dir: &TempDir, id: &str) {
     cx(dir).args(["integrate", id]).assert().success();
 }
 
+fn archive(dir: &TempDir, id: &str) {
+    cx(dir).args(["archive", "--ids", id]).assert().success();
+}
+
 fn graph_json(dir: &TempDir) -> serde_json::Value {
     let raw = std::fs::read_to_string(dir.path().join(".complex/graph.json")).unwrap();
     serde_json::from_str(&raw).unwrap()
@@ -523,11 +527,17 @@ fn integrate_moves_to_archive() {
     claim(&dir, &id, "agent-1");
     integrate(&dir, &id);
 
-    // node gone from graph.json
+    // node still in graph.json with state=integrated
+    let g = graph_json(&dir);
+    assert_eq!(g["nodes"].as_array().unwrap().len(), 1);
+    assert_eq!(g["nodes"][0]["state"], "integrated");
+
+    // archive moves it out
+    archive(&dir, &id);
+
     let g = graph_json(&dir);
     assert!(g["nodes"].as_array().unwrap().is_empty());
 
-    // node in archive
     let entries = archive_entries(&dir);
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["id"], id.as_str());
@@ -549,6 +559,11 @@ fn integrate_moves_markdown_to_archive_dir() {
     surface_id(&dir, &id);
     integrate(&dir, &id);
 
+    // body still in issues after integrate
+    assert!(dir.path().join(format!(".complex/issues/{}.md", id)).exists());
+
+    // archive moves it
+    archive(&dir, &id);
     assert!(!dir.path().join(format!(".complex/issues/{}.md", id)).exists());
     assert!(dir.path().join(format!(".complex/archive/{}.md", id)).exists());
 }
@@ -567,9 +582,13 @@ fn integrate_cleans_up_edges() {
     let g = graph_json(&dir);
     assert_eq!(g["edges"].as_array().unwrap().len(), 1);
 
+    // integrate keeps node but edges stay (needed for graph queries)
     integrate(&dir, &a);
+    let g = graph_json(&dir);
+    assert_eq!(g["edges"].as_array().unwrap().len(), 1);
 
-    // edge removed
+    // archive removes edges
+    archive(&dir, &a);
     let g = graph_json(&dir);
     assert!(g["edges"].as_array().unwrap().is_empty());
 }
@@ -1223,6 +1242,12 @@ fn reason_on_integrate_persists_in_archive() {
     cx(&dir).args(["integrate", &id, "--reason", "all tests pass"])
         .assert().success();
 
+    // reason stored on node in graph
+    let g = graph_json(&dir);
+    assert_eq!(g["nodes"][0]["meta"]["_reason"], "all tests pass");
+
+    // persists after archive
+    archive(&dir, &id);
     let entries = archive_entries(&dir);
     assert_eq!(entries[0]["meta"]["_reason"], "all tests pass");
 }
@@ -2278,9 +2303,10 @@ fn tag_denormalized_on_archive() {
 
     cx(&dir).args(["tag", &root, "release:v1"]).assert().success();
 
-    // Integrate the child — it should get effective tags baked in
+    // Integrate then archive the child — tags baked in at archive time
     surface_id(&dir, &child);
     integrate(&dir, &child);
+    archive(&dir, &child);
 
     // Read archive.jsonl and verify the child has the inherited tag
     let archive_path = dir.path().join(".complex/archive/archive.jsonl");
@@ -2367,4 +2393,42 @@ fn tag_serde_compat_no_tags_field() {
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["tags"], serde_json::json!([]));
+}
+
+// ── ID collision detection ───────────────────────────────────────────────────
+
+#[test]
+fn add_many_nodes_no_duplicate_ids() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+
+    let mut ids = std::collections::HashSet::new();
+    for i in 0..100 {
+        let id = add(&dir, &format!("node-{}", i));
+        assert!(ids.insert(id.clone()), "duplicate id: {}", id);
+    }
+}
+
+#[test]
+fn new_child_no_duplicate_after_archive() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+
+    let root = add(&dir, "root");
+    let child = new_child(&dir, &root, "child-1");
+
+    // Surface, claim, integrate, archive the child
+    surface_id(&dir, &child);
+    claim(&dir, &child, "test");
+    integrate(&dir, &child);
+    cx(&dir).args(["archive", "--ids", &child]).assert().success();
+
+    // Create many more children — none should collide with the archived child's
+    // leaf segment (probabilistically; 50 nodes is safe against 14.8M space)
+    let mut ids = std::collections::HashSet::new();
+    ids.insert(child.clone());
+    for i in 0..50 {
+        let c = new_child(&dir, &root, &format!("child-{}", i + 2));
+        assert!(ids.insert(c.clone()), "duplicate full id");
+    }
 }

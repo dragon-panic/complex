@@ -5,7 +5,7 @@ mod store;
 
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
-use model::{EdgeType, State};
+use model::{EdgeType, Graph, Node, State};
 
 #[derive(Parser)]
 #[command(name = "cx", about = "complex — hierarchical issue tracker for agents")]
@@ -91,12 +91,21 @@ enum Commands {
         reason: Option<String>,
     },
 
-    /// Mark a node as integrated (done) and move it to archive
+    /// Mark a node as integrated (done) — keeps node in tree, unblocks dependents
     Integrate {
         id: String,
         /// Outcome or rationale for integration
         #[arg(long)]
         reason: Option<String>,
+    },
+
+    /// Archive integrated nodes — removes from tree, moves to archive storage.
+    /// With no args: archives ALL integrated nodes.
+    /// With --ids: archives only the listed nodes.
+    Archive {
+        /// Comma-separated list of node IDs to archive (must be integrated)
+        #[arg(long)]
+        ids: Option<String>,
     },
 
     /// List shadowed nodes, or flag a node as shadowed
@@ -263,6 +272,7 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Claim { id, r#as, reason } => cmd_claim(id, r#as, reason, cli.json),
         Commands::Unclaim { id, reason } => cmd_unclaim(id, reason, cli.json),
         Commands::Integrate { id, reason } => cmd_integrate(id, reason, cli.json),
+        Commands::Archive { ids } => cmd_archive(ids, cli.json),
         Commands::Shadow { id, reason } => cmd_shadow(id, reason, cli.json),
         Commands::Unshadow { id, reason } => cmd_unshadow(id, reason, cli.json),
         Commands::Show { id } => cmd_show(id, cli.json),
@@ -503,13 +513,22 @@ fn cmd_init(ephemeral: bool) -> Result<()> {
 
 // ── add / new ─────────────────────────────────────────────────────────────────
 
+fn collect_existing_ids(root: &std::path::Path, graph: &model::Graph) -> Result<std::collections::HashSet<String>> {
+    let mut ids = store::load_archived_ids(root)?;
+    for n in &graph.nodes {
+        ids.insert(n.id.clone());
+    }
+    Ok(ids)
+}
+
 fn cmd_add(title: String, body: Option<String>, body_file: Option<String>, by: Option<String>, tags: Vec<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let mut graph = store::load(&root)?;
 
     let filed_by = by.or_else(|| std::env::var("CX_FILED_BY").ok());
 
-    let new_id = id::generate(None);
+    let existing = collect_existing_ids(&root, &graph)?;
+    let new_id = id::generate(None, &existing)?;
     let mut node = model::Node::new(new_id.clone(), title.clone());
     node.filed_by = filed_by;
     node.tags = tags;
@@ -543,7 +562,8 @@ fn cmd_new(parent_partial: String, title: String, body: Option<String>, body_fil
 
     let parent_id = id::resolve(&graph, &parent_partial)
         .map_err(|_| anyhow::anyhow!("parent '{}' not found — use cx tree to list nodes", parent_partial))?;
-    let new_id = id::generate(Some(&parent_id));
+    let existing = collect_existing_ids(&root, &graph)?;
+    let new_id = id::generate(Some(&parent_id), &existing)?;
     let mut node = model::Node::new(new_id.clone(), title.clone());
     node.filed_by = filed_by;
     node.tags = tags;
@@ -779,7 +799,7 @@ fn cmd_integrate(partial: String, reason: Option<String>, json: bool) -> Result<
         );
     }
 
-    // Before archiving: find latent nodes that `resolved` is blocking and that will
+    // Find latent nodes that `resolved` is blocking and that will
     // become fully unblocked once `resolved` integrates.
     let auto_surface: Vec<String> = graph
         .edges
@@ -803,24 +823,16 @@ fn cmd_integrate(partial: String, reason: Option<String>, json: bool) -> Result<
         })
         .collect();
 
-    // Snapshot effective tags before archiving (parent tree may be gone later)
-    let effective_tags = graph.effective_tags(&resolved);
-
     {
         let node = graph
             .get_node_mut(&resolved)
             .ok_or_else(|| anyhow::anyhow!("node not found: {}", resolved))?;
         node.state = State::Integrated;
-        // Denormalize: bake effective tags into the archived node
-        node.tags = effective_tags;
         node.touch();
         if let Some(r) = &reason {
             set_reason(node, r);
         }
     }
-
-    store::migrate_archive_if_needed(&root).ok();
-    store::archive_node(&root, &mut graph, &resolved)?;
 
     // Promote newly unblocked latent nodes to ready
     for y_id in &auto_surface {
@@ -850,9 +862,73 @@ fn cmd_integrate(partial: String, reason: Option<String>, json: bool) -> Result<
         }
         println!("{}", out);
     } else {
-        println!("integrated  {}  → archive", resolved);
+        println!("integrated  {}", resolved);
         for y_id in &auto_surface {
             println!("surfaced    {}  → ready (unblocked)", y_id);
+        }
+    }
+    Ok(())
+}
+
+fn cmd_archive(ids: Option<String>, json: bool) -> Result<()> {
+    let root = store::find_root()?;
+    let mut graph = store::load(&root)?;
+
+    // Collect nodes to archive
+    let to_archive: Vec<String> = if let Some(id_list) = ids {
+        // Explicit list: resolve each, verify integrated
+        let mut resolved = Vec::new();
+        for partial in id_list.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            let id = id::resolve(&graph, partial)?;
+            let node = graph
+                .get_node(&id)
+                .ok_or_else(|| anyhow::anyhow!("node not found: {}", id))?;
+            if node.state != State::Integrated {
+                anyhow::bail!("node {} is {:?}, not integrated — integrate it first", id, node.state);
+            }
+            resolved.push(id);
+        }
+        resolved
+    } else {
+        // No args: archive ALL integrated nodes
+        graph.nodes.iter()
+            .filter(|n| n.state == State::Integrated)
+            .map(|n| n.id.clone())
+            .collect()
+    };
+
+    if to_archive.is_empty() {
+        if json {
+            println!("{}", serde_json::json!({"archived": []}));
+        } else {
+            println!("no integrated nodes to archive");
+        }
+        return Ok(());
+    }
+
+    store::migrate_archive_if_needed(&root).ok();
+
+    let mut archived = Vec::new();
+    for node_id in &to_archive {
+        // Bake effective tags before archiving
+        let effective_tags = graph.effective_tags(node_id);
+        if let Some(node) = graph.get_node_mut(node_id) {
+            node.tags = effective_tags;
+        }
+        store::archive_node(&root, &mut graph, node_id)?;
+        archived.push(node_id.clone());
+    }
+
+    store::save(&root, &graph)?;
+    for node_id in &archived {
+        emit(&root, "archive", node_id, None, None, None);
+    }
+
+    if json {
+        println!("{}", serde_json::json!({"archived": archived}));
+    } else {
+        for node_id in &archived {
+            println!("archived  {}", node_id);
         }
     }
     Ok(())

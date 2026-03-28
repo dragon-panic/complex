@@ -254,6 +254,30 @@ fn save_agents(root: &Path, agents: &[AgentEntry]) -> Result<()> {
     Ok(())
 }
 
+/// Collect all IDs from archived nodes (active + rotated JSONL files).
+pub fn load_archived_ids(root: &Path) -> Result<std::collections::HashSet<String>> {
+    let archive_dir = root.join(ARCHIVE_DIR);
+    let mut ids = std::collections::HashSet::new();
+    if !archive_dir.exists() {
+        return Ok(ids);
+    }
+    for entry in fs::read_dir(&archive_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+            let content = fs::read_to_string(&path)?;
+            for line in content.lines() {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(line)
+                    && let Some(id) = v["id"].as_str()
+                {
+                    ids.insert(id.to_string());
+                }
+            }
+        }
+    }
+    Ok(ids)
+}
+
 // ── orphan detection ──────────────────────────────────────────────────────
 
 /// Find .md files in issues/ that don't correspond to any node in the graph.
