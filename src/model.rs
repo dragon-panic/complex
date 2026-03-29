@@ -1,6 +1,15 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Comment {
+    pub timestamp: DateTime<Utc>,
+    pub author: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    pub body: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum State {
@@ -66,6 +75,8 @@ pub struct Node {
     pub meta: Option<serde_json::Value>,
     #[serde(skip)]
     pub body: Option<String>,
+    #[serde(skip)]
+    pub comments: Vec<Comment>,
 }
 
 impl Node {
@@ -83,6 +94,7 @@ impl Node {
             updated_at: now,
             meta: None,
             body: None,
+            comments: vec![],
         }
     }
 

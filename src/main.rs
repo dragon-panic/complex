@@ -248,6 +248,38 @@ enum Commands {
         limit: usize,
     },
 
+    /// Append, edit, or remove a comment on a node
+    Comment {
+        /// Node ID to comment on
+        id: String,
+        /// Comment body (inline text). Omit if using --file.
+        body: Vec<String>,
+        /// Tag for the comment (e.g. proposal, review, code-review)
+        #[arg(long)]
+        tag: Option<String>,
+        /// Who is commenting (falls back to CX_FILED_BY, then "unknown")
+        #[arg(long, value_name = "WHO")]
+        r#as: Option<String>,
+        /// Read comment body from a file path
+        #[arg(long, conflicts_with = "body")]
+        file: Option<String>,
+        /// Edit an existing comment by its ISO 8601 timestamp
+        #[arg(long, value_name = "TIMESTAMP", conflicts_with_all = ["rm"])]
+        edit: Option<String>,
+        /// Remove a comment by its ISO 8601 timestamp
+        #[arg(long, value_name = "TIMESTAMP", conflicts_with_all = ["edit", "tag"])]
+        rm: Option<String>,
+    },
+
+    /// Read comments on a node
+    Comments {
+        /// Node ID
+        id: String,
+        /// Filter by tag
+        #[arg(long)]
+        tag: Option<String>,
+    },
+
     /// Show registered agents and their last-seen time
     Agents,
 
@@ -295,6 +327,8 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Agent => { print!("{}", AGENT_GUIDE); Ok(()) },
         Commands::Meta { id, value } => cmd_meta(id, value, cli.json),
         Commands::Log { limit } => cmd_log(limit, cli.json),
+        Commands::Comment { id, body, tag, r#as, file, edit, rm } => cmd_comment(id, body.join(" "), tag, r#as, file, edit, rm, cli.json),
+        Commands::Comments { id, tag } => cmd_comments(id, tag, cli.json),
         Commands::Agents => cmd_agents(cli.json),
         Commands::Status => cmd_status(cli.json),
     }
@@ -420,12 +454,38 @@ cx move <id> <new-parent>         reparent a node (and children) under a new par
 cx move <id> --root               promote a node to root level
 cx shadow <id>                    flag as blocked/stuck
 cx edit <id> --body "markdown"    update body non-interactively (or pipe: echo "md" | cx edit <id>)
+cx comment <id> --tag proposal --file /tmp/plan.md   append a comment
+cx comment <id> --tag review "PASS — looks good"     append with inline body
+cx comment <id> --edit <timestamp> "new text"         edit a comment by timestamp
+cx comment <id> --rm <timestamp>                      remove a comment
+cx comments <id> --json           read the full comment thread
+cx comments <id> --tag proposal   filter comments by tag
 cx show <id> --json               full node detail: state, edges, body, children
 cx tree --json                    full hierarchy with states (nested children)
 cx parts --json                   what each part currently holds
 cx therapy --json                 stale (claimed >24h), shadowed, and orphan body files
 cx list --state claimed --json    all nodes in a given state
 ```
+
+## Comments
+
+Each node has an append-only comment thread — use it instead of overwriting
+the body. The body is the spec; comments are the conversation about it.
+
+```
+cx comment <id> --tag proposal --file /tmp/plan.md    propose an approach
+cx comment <id> --tag review "PASS — looks good"      review a proposal
+cx comment <id> --tag code-review --file /tmp/cr.md   review the code
+cx comments <id> --tag proposal --json                read the latest proposal
+```
+
+Tags are conventions, not a fixed enum: `proposal`, `review`, `code-review`,
+`retro`, or omit for general discussion. Multiple comments can share a tag
+(e.g. two `code-review` entries after a retry cycle).
+
+`--as <who>` sets the author (falls back to `CX_FILED_BY`, then `"unknown"`).
+Edit (`--edit <timestamp>`) and remove (`--rm <timestamp>`) reference comments
+by their ISO 8601 timestamp.
 
 ## Rationale (--reason)
 
@@ -1920,6 +1980,164 @@ fn cmd_status(json: bool) -> Result<()> {
                 let part = n.part.as_deref().unwrap_or("—");
                 println!("{:<20}  {:<40}  {}", n.id, n.title, part);
             }
+        }
+    }
+    Ok(())
+}
+
+// ── comments ─────────────────────────────────────────────────────────────────
+
+#[allow(clippy::too_many_arguments)]
+fn cmd_comment(
+    partial: String,
+    body_inline: String,
+    tag: Option<String>,
+    as_author: Option<String>,
+    file: Option<String>,
+    edit_ts: Option<String>,
+    rm_ts: Option<String>,
+    json: bool,
+) -> Result<()> {
+    let root = store::find_root()?;
+    let mut graph = store::load(&root)?;
+    let resolved = id::resolve(&graph, &partial)?;
+
+    let node = graph
+        .get_node_mut(&resolved)
+        .ok_or_else(|| anyhow::anyhow!("node not found: {}", resolved))?;
+
+    let author = as_author
+        .or_else(|| std::env::var("CX_FILED_BY").ok())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    // ── remove ───────────────────────────────────────────────────────────
+    if let Some(ts_str) = rm_ts {
+        let ts = chrono::DateTime::parse_from_rfc3339(&ts_str)
+            .map_err(|e| anyhow::anyhow!("invalid timestamp '{}': {}", ts_str, e))?
+            .with_timezone(&chrono::Utc);
+        let before = node.comments.len();
+        node.comments.retain(|c| c.timestamp != ts);
+        if node.comments.len() == before {
+            bail!("no comment with timestamp {} on {}", ts_str, resolved);
+        }
+        node.touch();
+        store::save(&root, &graph)?;
+        emit(&root, "comment-rm", &resolved, None, Some(&ts_str), None);
+        if json {
+            println!("{}", serde_json::json!({ "id": resolved, "removed": ts_str }));
+        } else {
+            println!("removed comment {} from {}", ts_str, resolved);
+        }
+        return Ok(());
+    }
+
+    // Resolve body from --file or inline
+    let body = if let Some(path) = &file {
+        std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("cannot read {}: {}", path, e))?
+    } else {
+        body_inline
+    };
+
+    if body.trim().is_empty() {
+        bail!("comment body is empty — provide text or --file");
+    }
+
+    // ── edit ─────────────────────────────────────────────────────────────
+    if let Some(ts_str) = edit_ts {
+        let ts = chrono::DateTime::parse_from_rfc3339(&ts_str)
+            .map_err(|e| anyhow::anyhow!("invalid timestamp '{}': {}", ts_str, e))?
+            .with_timezone(&chrono::Utc);
+        let comment = node
+            .comments
+            .iter_mut()
+            .find(|c| c.timestamp == ts)
+            .ok_or_else(|| anyhow::anyhow!("no comment with timestamp {} on {}", ts_str, resolved))?;
+        comment.body = body;
+        if let Some(t) = &tag {
+            comment.tag = Some(t.clone());
+        }
+        node.touch();
+        store::save(&root, &graph)?;
+        emit(&root, "comment-edit", &resolved, None, Some(&ts_str), None);
+        if json {
+            println!("{}", serde_json::json!({ "id": resolved, "edited": ts_str }));
+        } else {
+            println!("edited comment {} on {}", ts_str, resolved);
+        }
+        return Ok(());
+    }
+
+    // ── append ───────────────────────────────────────────────────────────
+    let now = chrono::Utc::now();
+    let comment = model::Comment {
+        timestamp: now,
+        author: author.clone(),
+        tag: tag.clone(),
+        body,
+    };
+    let ts_str = now.to_rfc3339();
+    node.comments.push(comment);
+    node.touch();
+    store::save(&root, &graph)?;
+    store::upsert_agent(&root, &author).ok();
+    emit(&root, "comment", &resolved, Some(&author), tag.as_deref(), None);
+
+    if json {
+        println!("{}", serde_json::json!({
+            "id": resolved,
+            "timestamp": ts_str,
+            "author": author,
+            "tag": tag,
+        }));
+    } else {
+        let tag_display = tag.as_deref().unwrap_or("");
+        println!("comment  {}  {}  {}  {}", resolved, ts_str, author, tag_display);
+    }
+    Ok(())
+}
+
+fn cmd_comments(partial: String, tag_filter: Option<String>, json: bool) -> Result<()> {
+    let root = store::find_root()?;
+    let graph = store::load(&root)?;
+    let resolved = id::resolve(&graph, &partial)?;
+
+    let node = graph
+        .get_node(&resolved)
+        .ok_or_else(|| anyhow::anyhow!("node not found: {}", resolved))?;
+
+    let comments: Vec<&model::Comment> = node
+        .comments
+        .iter()
+        .filter(|c| {
+            tag_filter
+                .as_ref()
+                .map(|t| c.tag.as_deref() == Some(t.as_str()))
+                .unwrap_or(true)
+        })
+        .collect();
+
+    if json {
+        let out: Vec<_> = comments
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "timestamp": c.timestamp.to_rfc3339(),
+                    "author": c.author,
+                    "tag": c.tag,
+                    "body": c.body,
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&out)?);
+    } else if comments.is_empty() {
+        println!("no comments on {}", resolved);
+    } else {
+        for c in &comments {
+            let tag_display = c.tag.as_deref().unwrap_or("");
+            println!("--- {} {} {}", c.timestamp.to_rfc3339(), c.author, tag_display);
+            println!("{}", c.body.trim_end());
+            println!();
         }
     }
     Ok(())

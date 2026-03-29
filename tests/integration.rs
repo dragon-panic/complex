@@ -2432,3 +2432,272 @@ fn new_child_no_duplicate_after_archive() {
         assert!(ids.insert(c.clone()), "duplicate full id");
     }
 }
+
+// ── comments ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn comment_append_and_list() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "comment target");
+
+    // Append a comment with inline body
+    cx(&dir)
+        .args(["comment", &id, "--as", "alice", "--tag", "proposal", "my plan"])
+        .assert()
+        .success()
+        .stdout(contains("comment").and(contains(&id)));
+
+    // Append a second comment (no tag)
+    cx(&dir)
+        .args(["comment", &id, "--as", "bob", "just a note"])
+        .assert()
+        .success();
+
+    // List all comments
+    let out = cx(&dir)
+        .args(["--json", "comments", &id])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let comments: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(comments.len(), 2);
+    assert_eq!(comments[0]["author"], "alice");
+    assert_eq!(comments[0]["tag"], "proposal");
+    assert_eq!(comments[0]["body"], "my plan");
+    assert_eq!(comments[1]["author"], "bob");
+    assert!(comments[1]["tag"].is_null());
+
+    // Filter by tag
+    let out = cx(&dir)
+        .args(["--json", "comments", &id, "--tag", "proposal"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let filtered: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0]["author"], "alice");
+}
+
+#[test]
+fn comment_from_file() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "file comment test");
+
+    let body_file = dir.path().join("comment-body.md");
+    std::fs::write(&body_file, "# Proposal\n\nDo the thing.\n").unwrap();
+
+    cx(&dir)
+        .args([
+            "comment", &id,
+            "--as", "agent",
+            "--tag", "proposal",
+            "--file", body_file.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let out = cx(&dir)
+        .args(["--json", "comments", &id])
+        .output()
+        .unwrap();
+    let comments: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0]["body"], "# Proposal\n\nDo the thing.\n");
+}
+
+#[test]
+fn comment_edit() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "edit comment test");
+
+    // Append a comment
+    let out = cx(&dir)
+        .args(["--json", "comment", &id, "--as", "alice", "--tag", "proposal", "original"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ts = v["timestamp"].as_str().unwrap().to_string();
+
+    // Edit it
+    cx(&dir)
+        .args(["comment", &id, "--edit", &ts, "updated body"])
+        .assert()
+        .success()
+        .stdout(contains("edited"));
+
+    // Verify
+    let out = cx(&dir)
+        .args(["--json", "comments", &id])
+        .output()
+        .unwrap();
+    let comments: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0]["body"], "updated body");
+    // tag preserved
+    assert_eq!(comments[0]["tag"], "proposal");
+}
+
+#[test]
+fn comment_remove() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "rm comment test");
+
+    // Append two comments
+    let out1 = cx(&dir)
+        .args(["--json", "comment", &id, "--as", "a", "first"])
+        .output()
+        .unwrap();
+    let ts1: serde_json::Value = serde_json::from_slice(&out1.stdout).unwrap();
+    let ts1 = ts1["timestamp"].as_str().unwrap().to_string();
+
+    cx(&dir)
+        .args(["comment", &id, "--as", "b", "second"])
+        .assert()
+        .success();
+
+    // Remove the first
+    cx(&dir)
+        .args(["comment", &id, "--rm", &ts1])
+        .assert()
+        .success()
+        .stdout(contains("removed"));
+
+    // Verify only one remains
+    let out = cx(&dir)
+        .args(["--json", "comments", &id])
+        .output()
+        .unwrap();
+    let comments: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0]["body"], "second");
+}
+
+#[test]
+fn comment_empty_body_rejected() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "empty comment test");
+
+    // Empty inline body should fail
+    cx(&dir)
+        .args(["comment", &id])
+        .assert()
+        .failure()
+        .stderr(contains("empty"));
+}
+
+#[test]
+fn comment_not_in_show() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "show without comments");
+
+    cx(&dir)
+        .args(["comment", &id, "--as", "alice", "--tag", "review", "LGTM"])
+        .assert()
+        .success();
+
+    // cx show should NOT include comments
+    cx(&dir)
+        .args(["show", &id])
+        .assert()
+        .success()
+        .stdout(contains("show without comments"))
+        .stdout(contains("LGTM").not());
+
+    // cx comments is the way to read them
+    let out = cx(&dir)
+        .args(["--json", "comments", &id])
+        .output()
+        .unwrap();
+    let comments: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0]["body"], "LGTM");
+}
+
+#[test]
+fn comment_persists_across_load() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "persistence test");
+
+    cx(&dir)
+        .args(["comment", &id, "--as", "bot", "hello world"])
+        .assert()
+        .success();
+
+    // Comments file should exist
+    let comments_path = dir
+        .path()
+        .join(".complex/issues")
+        .join(format!("{}.comments.json", id));
+    assert!(comments_path.exists());
+
+    // Load via a fresh cx invocation
+    let out = cx(&dir)
+        .args(["--json", "comments", &id])
+        .output()
+        .unwrap();
+    let comments: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0]["body"], "hello world");
+}
+
+#[test]
+fn comment_rm_nonexistent_timestamp_fails() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "bad rm test");
+
+    cx(&dir)
+        .args(["comment", &id, "--rm", "2099-01-01T00:00:00Z"])
+        .assert()
+        .failure()
+        .stderr(contains("no comment with timestamp"));
+}
+
+#[test]
+fn comment_events_logged() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let id = add(&dir, "event log test");
+
+    // Append
+    let out = cx(&dir)
+        .args(["--json", "comment", &id, "--as", "alice", "note"])
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ts = v["timestamp"].as_str().unwrap().to_string();
+
+    // Edit
+    cx(&dir)
+        .args(["comment", &id, "--edit", &ts, "updated"])
+        .assert()
+        .success();
+
+    // Remove
+    cx(&dir)
+        .args(["comment", &id, "--rm", &ts])
+        .assert()
+        .success();
+
+    // Check events
+    let out = cx(&dir)
+        .args(["--json", "log", "--limit", "10"])
+        .output()
+        .unwrap();
+    let events: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    let actions: Vec<&str> = events
+        .iter()
+        .filter_map(|e| e["action"].as_str())
+        .collect();
+    assert!(actions.contains(&"comment"));
+    assert!(actions.contains(&"comment-edit"));
+    assert!(actions.contains(&"comment-rm"));
+}

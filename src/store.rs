@@ -74,6 +74,10 @@ pub fn load(root: &Path) -> Result<Graph> {
         if md.exists() {
             node.body = Some(fs::read_to_string(&md)?);
         }
+        let comments_path = issues.join(format!("{}.comments.json", node.id));
+        if comments_path.exists() {
+            node.comments = serde_json::from_str(&fs::read_to_string(&comments_path)?)?;
+        }
     }
 
     Ok(graph)
@@ -94,6 +98,15 @@ pub fn save(root: &Path, graph: &Graph) -> Result<()> {
     for node in &graph.nodes {
         if let Some(body) = &node.body {
             fs::write(issues.join(format!("{}.md", node.id)), body)?;
+        }
+        let comments_path = issues.join(format!("{}.comments.json", node.id));
+        if node.comments.is_empty() {
+            // Clean up file if all comments removed
+            if comments_path.exists() {
+                fs::remove_file(&comments_path)?;
+            }
+        } else {
+            fs::write(&comments_path, serde_json::to_string_pretty(&node.comments)?)?;
         }
     }
 
@@ -135,6 +148,13 @@ pub fn archive_node(root: &Path, graph: &mut Graph, id: &str) -> Result<()> {
     let dst = root.join(ARCHIVE_DIR).join(format!("{}.md", id));
     if src.exists() {
         fs::rename(src, dst)?;
+    }
+
+    // Move comments file to archive dir
+    let csrc = root.join(ISSUES_DIR).join(format!("{}.comments.json", id));
+    let cdst = root.join(ARCHIVE_DIR).join(format!("{}.comments.json", id));
+    if csrc.exists() {
+        fs::rename(csrc, cdst)?;
     }
 
     // Append node as a single JSONL line, rotating first if needed

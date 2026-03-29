@@ -105,3 +105,30 @@
 {"ts":"2026-03-28T12:57:54.890708158+00:00","action":"edit","node_id":"tm2k"}
 {"ts":"2026-03-28T12:58:09.656528299+00:00","action":"claim","node_id":"tm2k","part":"claude"}
 {"ts":"2026-03-28T13:00:58.933916998+00:00","action":"integrate","node_id":"tm2k","reason":"collision detection on create — tests pass, clippy clean"}
+{"ts":"2026-03-29T13:09:42.361096119+00:00","action":"create","node_id":"dUjp","detail":"cx comments: append-only comment thread on issues"}
+{"ts":"2026-03-29T13:10:02.798500959+00:00","action":"edit","node_id":"dUjp"}
+{"ts":"2026-03-29T13:11:48.691498296+00:00","action":"edit","node_id":"dUjp"}
+{"ts":"2026-03-29T13:14:01.301310011+00:00","action":"edit","node_id":"dUjp"}
+{"ts":"2026-03-29T13:18:38.837478450+00:00","action":"surface","node_id":"dUjp"}
+{"ts":"2026-03-29T13:18:38.839271354+00:00","action":"claim","node_id":"dUjp","part":"claude"}
+{"ts":"2026-03-29T13:18:48.414154157+00:00","action":"create","node_id":"dUjp.npdM","detail":"model: Comment struct + Node.comments field"}
+{"ts":"2026-03-29T13:18:48.415445490+00:00","action":"create","node_id":"dUjp.WapK","detail":"store: comment persistence in .comments.json files"}
+{"ts":"2026-03-29T13:18:48.416718073+00:00","action":"create","node_id":"dUjp.XRQ9","detail":"cli: Comment and Comments subcommands"}
+{"ts":"2026-03-29T13:18:48.417964517+00:00","action":"create","node_id":"dUjp.MUrF","detail":"show: display comments in cx show"}
+{"ts":"2026-03-29T13:18:48.419305828+00:00","action":"create","node_id":"dUjp.rnDj","detail":"tests: integration tests for comment commands"}
+{"ts":"2026-03-29T13:18:53.505298906+00:00","action":"surface","node_id":"dUjp.npdM"}
+{"ts":"2026-03-29T13:18:53.506984424+00:00","action":"claim","node_id":"dUjp.npdM","part":"claude"}
+{"ts":"2026-03-29T13:21:23.458724448+00:00","action":"integrate","node_id":"dUjp.npdM","reason":"Comment struct + comments field added to model"}
+{"ts":"2026-03-29T13:21:23.458762977+00:00","action":"surface","node_id":"dUjp.WapK","reason":"auto-surfaced: last blocker integrated"}
+{"ts":"2026-03-29T13:21:26.581053795+00:00","action":"claim","node_id":"dUjp.WapK","part":"claude"}
+{"ts":"2026-03-29T13:22:08.839323582+00:00","action":"integrate","node_id":"dUjp.WapK","reason":"comment persistence in .comments.json files"}
+{"ts":"2026-03-29T13:22:08.839359511+00:00","action":"surface","node_id":"dUjp.XRQ9","reason":"auto-surfaced: last blocker integrated"}
+{"ts":"2026-03-29T13:22:12.576106100+00:00","action":"claim","node_id":"dUjp.XRQ9","part":"claude"}
+{"ts":"2026-03-29T13:23:11.719780682+00:00","action":"integrate","node_id":"dUjp.XRQ9","reason":"Comment and Comments subcommands added"}
+{"ts":"2026-03-29T13:23:11.719814950+00:00","action":"surface","node_id":"dUjp.MUrF","reason":"auto-surfaced: last blocker integrated"}
+{"ts":"2026-03-29T13:23:16.608449491+00:00","action":"claim","node_id":"dUjp.MUrF","part":"claude"}
+{"ts":"2026-03-29T13:23:43.809208423+00:00","action":"integrate","node_id":"dUjp.MUrF","reason":"cx show now displays comment thread"}
+{"ts":"2026-03-29T13:23:43.809254311+00:00","action":"surface","node_id":"dUjp.rnDj","reason":"auto-surfaced: last blocker integrated"}
+{"ts":"2026-03-29T13:23:50.052208315+00:00","action":"claim","node_id":"dUjp.rnDj","part":"claude"}
+{"ts":"2026-03-29T13:25:26.016490867+00:00","action":"integrate","node_id":"dUjp.rnDj","reason":"9 integration tests all pass"}
+{"ts":"2026-03-29T13:25:26.018030890+00:00","action":"integrate","node_id":"dUjp","reason":"comments feature complete — model, store, CLI, show, tests"}
