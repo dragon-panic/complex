@@ -154,3 +154,21 @@
 {"ts":"2026-03-29T17:34:29.822904069+00:00","action":"integrate","node_id":"GZ1W","reason":"all subtasks complete, 161 tests pass"}
 {"ts":"2026-03-29T19:44:21.871409761+00:00","action":"create","node_id":"pjbQ","detail":"Remove agents.json management from complex"}
 {"ts":"2026-03-29T19:47:00.246143929+00:00","action":"integrate","node_id":"pjbQ","reason":"removed agents.json management — orchestrator concern"}
+{"ts":"2026-03-29T19:59:59.999659059+00:00","action":"create","node_id":"tYvL","detail":"Docs overhaul: README + CONTRIBUTING + design doc"}
+{"ts":"2026-03-29T20:00:04.741438515+00:00","action":"create","node_id":"tYvL.ayIX","detail":"README.md — practical user guide"}
+{"ts":"2026-03-29T20:00:04.743127183+00:00","action":"create","node_id":"tYvL.8wit","detail":"CONTRIBUTING.md — build/test/project structure"}
+{"ts":"2026-03-29T20:00:04.744948816+00:00","action":"create","node_id":"tYvL.jEgs","detail":"docs/design.md — theory and architecture"}
+{"ts":"2026-03-29T20:00:04.747007801+00:00","action":"create","node_id":"tYvL.Faxt","detail":"Delete docs/prd/README.md"}
+{"ts":"2026-03-29T20:00:09.113848366+00:00","action":"surface","node_id":"tYvL.ayIX"}
+{"ts":"2026-03-29T20:00:09.115467087+00:00","action":"surface","node_id":"tYvL.8wit"}
+{"ts":"2026-03-29T20:00:09.116967422+00:00","action":"surface","node_id":"tYvL.jEgs"}
+{"ts":"2026-03-29T20:00:09.118440598+00:00","action":"surface","node_id":"tYvL.Faxt"}
+{"ts":"2026-03-29T20:00:09.120142466+00:00","action":"claim","node_id":"tYvL.ayIX","part":"claude"}
+{"ts":"2026-03-29T20:00:09.121558795+00:00","action":"claim","node_id":"tYvL.8wit","part":"claude"}
+{"ts":"2026-03-29T20:00:09.122929984+00:00","action":"claim","node_id":"tYvL.jEgs","part":"claude"}
+{"ts":"2026-03-29T20:00:09.124394091+00:00","action":"claim","node_id":"tYvL.Faxt","part":"claude"}
+{"ts":"2026-03-29T20:02:34.638544923+00:00","action":"integrate","node_id":"tYvL.ayIX","reason":"README rewritten as practical user guide"}
+{"ts":"2026-03-29T20:02:34.640236631+00:00","action":"integrate","node_id":"tYvL.8wit","reason":"CONTRIBUTING.md created"}
+{"ts":"2026-03-29T20:02:34.641861232+00:00","action":"integrate","node_id":"tYvL.jEgs","reason":"docs/design.md created with theory/architecture"}
+{"ts":"2026-03-29T20:02:34.643418035+00:00","action":"integrate","node_id":"tYvL.Faxt","reason":"docs/prd/README.md deleted"}
+{"ts":"2026-03-29T20:02:34.644912391+00:00","action":"integrate","node_id":"tYvL","reason":"all docs updated"}

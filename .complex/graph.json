@@ -208,6 +208,66 @@
       "meta": {
         "_reason": "removed agents.json management — orchestrator concern"
       }
+    },
+    {
+      "id": "tYvL",
+      "title": "Docs overhaul: README + CONTRIBUTING + design doc",
+      "state": "integrated",
+      "shadowed": false,
+      "part": null,
+      "created_at": "2026-03-29T19:59:59.999026132Z",
+      "updated_at": "2026-03-29T20:02:34.644589302Z",
+      "meta": {
+        "_reason": "all docs updated"
+      }
+    },
+    {
+      "id": "tYvL.ayIX",
+      "title": "README.md — practical user guide",
+      "state": "integrated",
+      "shadowed": false,
+      "part": "claude",
+      "created_at": "2026-03-29T20:00:04.740946553Z",
+      "updated_at": "2026-03-29T20:02:34.637980803Z",
+      "meta": {
+        "_reason": "README rewritten as practical user guide"
+      }
+    },
+    {
+      "id": "tYvL.8wit",
+      "title": "CONTRIBUTING.md — build/test/project structure",
+      "state": "integrated",
+      "shadowed": false,
+      "part": "claude",
+      "created_at": "2026-03-29T20:00:04.742831854Z",
+      "updated_at": "2026-03-29T20:02:34.639880244Z",
+      "meta": {
+        "_reason": "CONTRIBUTING.md created"
+      }
+    },
+    {
+      "id": "tYvL.jEgs",
+      "title": "docs/design.md — theory and architecture",
+      "state": "integrated",
+      "shadowed": false,
+      "part": "claude",
+      "created_at": "2026-03-29T20:00:04.744536661Z",
+      "updated_at": "2026-03-29T20:02:34.641480886Z",
+      "meta": {
+        "_reason": "docs/design.md created with theory/architecture"
+      }
+    },
+    {
+      "id": "tYvL.Faxt",
+      "title": "Delete docs/prd/README.md",
+      "state": "integrated",
+      "shadowed": false,
+      "part": "claude",
+      "created_at": "2026-03-29T20:00:04.746676663Z",
+      "updated_at": "2026-03-29T20:02:34.643055508Z",
+      "meta": {
+        "_reason": "docs/prd/README.md deleted"
+      }
     }
   ],
   "edges": [

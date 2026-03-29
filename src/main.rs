@@ -5,7 +5,7 @@ mod store;
 
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
-use model::{EdgeType, Graph, Node, State};
+use model::{EdgeType, State};
 
 #[derive(Parser)]
 #[command(name = "cx", about = "complex — hierarchical issue tracker for agents")]
