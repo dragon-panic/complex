@@ -134,7 +134,10 @@ pub fn read_body(root: &Path, id: &str) -> Result<Option<String>> {
 
 // ── archive ───────────────────────────────────────────────────────────────────
 
+const ARCHIVED_EDGES_JSONL: &str = "edges.jsonl";
+
 /// Append a single node to archive.jsonl, rotating if needed.
+/// Edges referencing this node are moved to archive/edges.jsonl (not dropped).
 pub fn archive_node(root: &Path, graph: &mut Graph, id: &str) -> Result<()> {
     let pos = graph
         .nodes
@@ -164,8 +167,145 @@ pub fn archive_node(root: &Path, graph: &mut Graph, id: &str) -> Result<()> {
     let line = serde_json::to_string(&node)?;
     append_line(&archive_path, &line)?;
 
-    // Remove edges that referenced the archived node
-    graph.edges.retain(|e| e.from != id && e.to != id);
+    // Move edges referencing this node to archive/edges.jsonl
+    let edges_path = root.join(ARCHIVE_DIR).join(ARCHIVED_EDGES_JSONL);
+    let (to_archive, to_keep): (Vec<_>, Vec<_>) =
+        graph.edges.drain(..).partition(|e| e.from == id || e.to == id);
+    for edge in &to_archive {
+        let edge_line = serde_json::to_string(edge)?;
+        append_line(&edges_path, &edge_line)?;
+    }
+    graph.edges = to_keep;
+
+    Ok(())
+}
+
+/// Restore a node from the archive back into the graph (as integrated).
+/// Edges from archive/edges.jsonl are restored if both endpoints are now live.
+pub fn unarchive_node(root: &Path, graph: &mut Graph, id: &str) -> Result<()> {
+    let archive_dir = root.join(ARCHIVE_DIR);
+
+    // Find and remove node from archive JSONL files
+    let node = remove_from_archive_jsonl(&archive_dir, id)?
+        .with_context(|| format!("node '{}' not found in archive", id))?;
+
+    // Move body back to issues/
+    let src = archive_dir.join(format!("{}.md", id));
+    let dst = root.join(ISSUES_DIR).join(format!("{}.md", id));
+    if src.exists() {
+        fs::rename(src, dst)?;
+    }
+
+    // Move comments back to issues/
+    let csrc = archive_dir.join(format!("{}.comments.json", id));
+    let cdst = root.join(ISSUES_DIR).join(format!("{}.comments.json", id));
+    if csrc.exists() {
+        fs::rename(csrc, cdst)?;
+    }
+
+    // Insert node back into graph
+    graph.nodes.push(node);
+
+    // Restore edges from edges.jsonl where both endpoints are now in the graph
+    restore_archived_edges(root, graph)?;
+
+    Ok(())
+}
+
+/// Scan archive/edges.jsonl: restore edges where both endpoints exist in the
+/// graph, leave the rest.
+fn restore_archived_edges(root: &Path, graph: &mut Graph) -> Result<()> {
+    let edges_path = root.join(ARCHIVE_DIR).join(ARCHIVED_EDGES_JSONL);
+    if !edges_path.exists() {
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(&edges_path)?;
+    let mut keep = Vec::new();
+    for line in content.lines().filter(|l| !l.trim().is_empty()) {
+        let edge: crate::model::Edge = serde_json::from_str(line)?;
+        if graph.get_node(&edge.from).is_some() && graph.get_node(&edge.to).is_some() {
+            graph.edges.push(edge);
+        } else {
+            keep.push(line.to_string());
+        }
+    }
+
+    if keep.is_empty() {
+        fs::remove_file(&edges_path)?;
+    } else {
+        fs::write(&edges_path, keep.join("\n") + "\n")?;
+    }
+
+    Ok(())
+}
+
+/// Find a node by ID in all archive JSONL files, remove its line, return the node.
+fn remove_from_archive_jsonl(archive_dir: &Path, id: &str) -> Result<Option<Node>> {
+    if !archive_dir.exists() {
+        return Ok(None);
+    }
+    for entry in fs::read_dir(archive_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        // Only look at JSONL files, skip edges.jsonl
+        if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+            continue;
+        }
+        if path.file_name().and_then(|n| n.to_str()) == Some(ARCHIVED_EDGES_JSONL) {
+            continue;
+        }
+        let content = fs::read_to_string(&path)?;
+        let mut found = None;
+        let mut remaining = Vec::new();
+        for line in content.lines().filter(|l| !l.trim().is_empty()) {
+            if found.is_none()
+                && let Ok(node) = serde_json::from_str::<Node>(line)
+                && node.id == id
+            {
+                found = Some(node);
+                continue;
+            }
+            remaining.push(line.to_string());
+        }
+        if let Some(node) = found {
+            if remaining.is_empty() {
+                fs::remove_file(&path)?;
+            } else {
+                fs::write(&path, remaining.join("\n") + "\n")?;
+            }
+            return Ok(Some(node));
+        }
+    }
+    Ok(None)
+}
+
+/// Remove any archived edges that reference the given node ID.
+/// Called by cx rm to prevent orphaned edges in the archive pool.
+pub fn scrub_archived_edges(root: &Path, id: &str) -> Result<()> {
+    let edges_path = root.join(ARCHIVE_DIR).join(ARCHIVED_EDGES_JSONL);
+    if !edges_path.exists() {
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(&edges_path)?;
+    let keep: Vec<&str> = content
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter(|l| {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(l) {
+                v["from"].as_str() != Some(id) && v["to"].as_str() != Some(id)
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    if keep.is_empty() {
+        fs::remove_file(&edges_path)?;
+    } else {
+        fs::write(&edges_path, keep.join("\n") + "\n")?;
+    }
 
     Ok(())
 }

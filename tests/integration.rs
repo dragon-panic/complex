@@ -67,6 +67,45 @@ fn archive_entries(dir: &TempDir) -> Vec<serde_json::Value> {
         .collect()
 }
 
+fn unarchive(dir: &TempDir, id: &str) {
+    cx(dir).args(["unarchive", id]).assert().success();
+}
+
+fn block(dir: &TempDir, a: &str, b: &str) {
+    cx(dir).args(["block", a, b]).assert().success();
+}
+
+fn graph_edges(dir: &TempDir) -> Vec<serde_json::Value> {
+    let g = graph_json(dir);
+    g["edges"].as_array().unwrap().clone()
+}
+
+fn graph_node_ids(dir: &TempDir) -> Vec<String> {
+    let g = graph_json(dir);
+    g["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n["id"].as_str().unwrap().to_string())
+        .collect()
+}
+
+fn archived_edges(dir: &TempDir) -> Vec<serde_json::Value> {
+    let path = dir.path().join(".complex/archive/edges.jsonl");
+    if !path.exists() {
+        return vec![];
+    }
+    let raw = std::fs::read_to_string(path).unwrap();
+    raw.lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect()
+}
+
+fn has_edge(edges: &[serde_json::Value], from: &str, to: &str) -> bool {
+    edges.iter().any(|e| e["from"].as_str() == Some(from) && e["to"].as_str() == Some(to))
+}
+
 // ── cx status ─────────────────────────────────────────────────────────────────
 
 #[test]
@@ -2700,4 +2739,311 @@ fn comment_events_logged() {
     assert!(actions.contains(&"comment"));
     assert!(actions.contains(&"comment-edit"));
     assert!(actions.contains(&"comment-rm"));
+}
+
+// ── archive edge preservation + unarchive ────────────────────────────────────
+
+/// Scenario 1: Archive one node, unarchive it — edges round-trip cleanly.
+#[test]
+fn unarchive_single_node_restores_edges() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let b = add(&dir, "B");
+    let c = add(&dir, "C");
+    surface_id(&dir, &a);
+    surface_id(&dir, &b);
+    surface_id(&dir, &c);
+    block(&dir, &a, &b);
+    block(&dir, &a, &c);
+
+    // Archive A
+    claim(&dir, &a, "test");
+    integrate(&dir, &a);
+    archive(&dir, &a);
+
+    // A's edges should be in archived edges, not live graph
+    assert!(!graph_node_ids(&dir).contains(&a));
+    let live = graph_edges(&dir);
+    assert!(!has_edge(&live, &a, &b));
+    assert!(!has_edge(&live, &a, &c));
+    let stashed = archived_edges(&dir);
+    assert!(has_edge(&stashed, &a, &b));
+    assert!(has_edge(&stashed, &a, &c));
+
+    // Unarchive A
+    unarchive(&dir, &a);
+
+    // A is back, edges restored
+    assert!(graph_node_ids(&dir).contains(&a));
+    let live = graph_edges(&dir);
+    assert!(has_edge(&live, &a, &b));
+    assert!(has_edge(&live, &a, &c));
+    assert!(archived_edges(&dir).is_empty());
+}
+
+/// Scenario 2: Archive both endpoints, unarchive in reverse order — full recovery.
+#[test]
+fn unarchive_both_endpoints_reverse_order() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let b = add(&dir, "B");
+    let c = add(&dir, "C");
+    surface_id(&dir, &a);
+    surface_id(&dir, &b);
+    surface_id(&dir, &c);
+    block(&dir, &a, &b);
+    block(&dir, &a, &c);
+    block(&dir, &b, &c);
+
+    // Archive A, then B
+    claim(&dir, &a, "t");
+    integrate(&dir, &a);
+    archive(&dir, &a);
+    claim(&dir, &b, "t");
+    integrate(&dir, &b);
+    archive(&dir, &b);
+
+    // Only C remains, no live edges
+    assert_eq!(graph_node_ids(&dir), vec![c.clone()]);
+    assert!(graph_edges(&dir).is_empty());
+    // All three edges in archive
+    let stashed = archived_edges(&dir);
+    assert_eq!(stashed.len(), 3);
+
+    // Unarchive B first
+    unarchive(&dir, &b);
+    let live = graph_edges(&dir);
+    // B→C should be restored (both live), A→B should not (A still archived)
+    assert!(has_edge(&live, &b, &c));
+    assert!(!has_edge(&live, &a, &b));
+    // A→B and A→C still in archive
+    let stashed = archived_edges(&dir);
+    assert_eq!(stashed.len(), 2);
+    assert!(has_edge(&stashed, &a, &b));
+    assert!(has_edge(&stashed, &a, &c));
+
+    // Unarchive A
+    unarchive(&dir, &a);
+    let live = graph_edges(&dir);
+    assert!(has_edge(&live, &a, &b));
+    assert!(has_edge(&live, &a, &c));
+    assert!(has_edge(&live, &b, &c));
+    assert!(archived_edges(&dir).is_empty());
+}
+
+/// Scenario 3: Archive all three, unarchive in arbitrary order — full recovery.
+#[test]
+fn unarchive_all_three_arbitrary_order() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let b = add(&dir, "B");
+    let c = add(&dir, "C");
+    surface_id(&dir, &a);
+    surface_id(&dir, &b);
+    surface_id(&dir, &c);
+    block(&dir, &a, &b);
+    block(&dir, &a, &c);
+    block(&dir, &b, &c);
+
+    // Archive all
+    for id in [&a, &b, &c] {
+        claim(&dir, id, "t");
+        integrate(&dir, id);
+        archive(&dir, id);
+    }
+    assert!(graph_node_ids(&dir).is_empty());
+    assert!(graph_edges(&dir).is_empty());
+
+    // Unarchive C, then A, then B
+    unarchive(&dir, &c);
+    assert!(graph_edges(&dir).is_empty()); // no partner live yet
+
+    unarchive(&dir, &a);
+    let live = graph_edges(&dir);
+    assert!(has_edge(&live, &a, &c)); // A→C restored
+    assert!(!has_edge(&live, &a, &b)); // B still archived
+
+    unarchive(&dir, &b);
+    let live = graph_edges(&dir);
+    assert!(has_edge(&live, &a, &b));
+    assert!(has_edge(&live, &a, &c));
+    assert!(has_edge(&live, &b, &c));
+    assert!(archived_edges(&dir).is_empty());
+}
+
+/// Scenario 4: Partial unarchive — some nodes stay archived, edges stay in pool.
+#[test]
+fn partial_unarchive_edges_stay_in_pool() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let b = add(&dir, "B");
+    let c = add(&dir, "C");
+    surface_id(&dir, &a);
+    surface_id(&dir, &b);
+    surface_id(&dir, &c);
+    block(&dir, &a, &b);
+    block(&dir, &a, &c);
+    block(&dir, &b, &c);
+
+    // Archive A and B
+    claim(&dir, &a, "t");
+    integrate(&dir, &a);
+    archive(&dir, &a);
+    claim(&dir, &b, "t");
+    integrate(&dir, &b);
+    archive(&dir, &b);
+
+    // Unarchive only A
+    unarchive(&dir, &a);
+    let live = graph_edges(&dir);
+    assert!(has_edge(&live, &a, &c)); // A→C restored (both live)
+    assert!(!has_edge(&live, &a, &b)); // B still archived
+
+    // A→B and B→C stay in archived edges
+    let stashed = archived_edges(&dir);
+    assert!(has_edge(&stashed, &a, &b));
+    assert!(has_edge(&stashed, &b, &c));
+}
+
+/// Scenario 5: New edge added after archive — no conflict on unarchive.
+#[test]
+fn new_edge_after_archive_no_conflict() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let b = add(&dir, "B");
+    let c = add(&dir, "C");
+    surface_id(&dir, &a);
+    surface_id(&dir, &b);
+    surface_id(&dir, &c);
+    block(&dir, &a, &b);
+
+    // Archive A
+    claim(&dir, &a, "t");
+    integrate(&dir, &a);
+    archive(&dir, &a);
+
+    // Add a new edge B→C while A is archived
+    block(&dir, &b, &c);
+
+    // Unarchive A
+    unarchive(&dir, &a);
+    let live = graph_edges(&dir);
+    assert!(has_edge(&live, &a, &b)); // restored
+    assert!(has_edge(&live, &b, &c)); // was added while A archived
+}
+
+/// Scenario 6: cx rm scrubs archived edges referencing the removed node.
+#[test]
+fn rm_scrubs_archived_edges() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let b = add(&dir, "B");
+    surface_id(&dir, &a);
+    surface_id(&dir, &b);
+    block(&dir, &a, &b);
+
+    // Archive A (edge A→B goes to edges.jsonl)
+    claim(&dir, &a, "t");
+    integrate(&dir, &a);
+    archive(&dir, &a);
+    assert!(has_edge(&archived_edges(&dir), &a, &b));
+
+    // rm B — should also scrub A→B from archived edges
+    cx(&dir).args(["rm", &b]).assert().success();
+
+    // Archived edges referencing B should be gone
+    let stashed = archived_edges(&dir);
+    assert!(!has_edge(&stashed, &a, &b));
+}
+
+/// Unarchived node returns in integrated state.
+#[test]
+fn unarchive_restores_as_integrated() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    surface_id(&dir, &a);
+    claim(&dir, &a, "t");
+    integrate(&dir, &a);
+    archive(&dir, &a);
+
+    let out = cx(&dir)
+        .args(["--json", "unarchive", &a])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["id"].as_str().unwrap(), a);
+
+    // Verify state is integrated
+    let g = graph_json(&dir);
+    let node = g["nodes"].as_array().unwrap().iter().find(|n| n["id"] == a).unwrap();
+    assert_eq!(node["state"], "integrated");
+}
+
+/// Unarchive restores body and comments files.
+#[test]
+fn unarchive_restores_body_and_comments() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    surface_id(&dir, &a);
+
+    // Set a body
+    cx(&dir).args(["edit", &a, "--body", "my body content"]).assert().success();
+    // Add a comment
+    cx(&dir).args(["comment", &a, "hello"]).assert().success();
+
+    claim(&dir, &a, "t");
+    integrate(&dir, &a);
+    archive(&dir, &a);
+
+    // Files should be in archive/
+    assert!(dir.path().join(format!(".complex/archive/{}.md", a)).exists());
+    assert!(dir.path().join(format!(".complex/archive/{}.comments.json", a)).exists());
+    assert!(!dir.path().join(format!(".complex/issues/{}.md", a)).exists());
+    assert!(!dir.path().join(format!(".complex/issues/{}.comments.json", a)).exists());
+
+    unarchive(&dir, &a);
+
+    // Files should be back in issues/
+    assert!(dir.path().join(format!(".complex/issues/{}.md", a)).exists());
+    assert!(!dir.path().join(format!(".complex/archive/{}.md", a)).exists());
+    let body = std::fs::read_to_string(dir.path().join(format!(".complex/issues/{}.md", a))).unwrap();
+    assert!(body.contains("my body content"));
+}
+
+/// Unarchive a non-existent ID fails gracefully.
+#[test]
+fn unarchive_missing_id_fails() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    cx(&dir).args(["unarchive", "ZZZZ"]).assert().failure();
+}
+
+/// Unarchive emits an event.
+#[test]
+fn unarchive_emits_event() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    surface_id(&dir, &a);
+    claim(&dir, &a, "t");
+    integrate(&dir, &a);
+    archive(&dir, &a);
+    unarchive(&dir, &a);
+
+    let out = cx(&dir)
+        .args(["--json", "log", "--limit", "10"])
+        .output()
+        .unwrap();
+    let events: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    let actions: Vec<&str> = events.iter().filter_map(|e| e["action"].as_str()).collect();
+    assert!(actions.contains(&"unarchive"));
 }

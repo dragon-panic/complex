@@ -132,3 +132,23 @@
 {"ts":"2026-03-29T13:23:50.052208315+00:00","action":"claim","node_id":"dUjp.rnDj","part":"claude"}
 {"ts":"2026-03-29T13:25:26.016490867+00:00","action":"integrate","node_id":"dUjp.rnDj","reason":"9 integration tests all pass"}
 {"ts":"2026-03-29T13:25:26.018030890+00:00","action":"integrate","node_id":"dUjp","reason":"comments feature complete — model, store, CLI, show, tests"}
+{"ts":"2026-03-29T16:47:28.207340734+00:00","action":"create","node_id":"GZ1W","detail":"unarchive command + preserve edges across archive/unarchive"}
+{"ts":"2026-03-29T16:47:47.625031410+00:00","action":"edit","node_id":"GZ1W"}
+{"ts":"2026-03-29T16:47:52.767406820+00:00","action":"create","node_id":"GZ1W.c6XZ","detail":"store: archive edges to edges.jsonl instead of dropping"}
+{"ts":"2026-03-29T16:47:52.769345550+00:00","action":"create","node_id":"GZ1W.gE7n","detail":"store: unarchive_node — restore node + edges from archive"}
+{"ts":"2026-03-29T16:47:52.771142845+00:00","action":"create","node_id":"GZ1W.1CsZ","detail":"CLI: Unarchive subcommand"}
+{"ts":"2026-03-29T16:47:52.772930912+00:00","action":"create","node_id":"GZ1W.h2MX","detail":"store: scrub archived edges on cx rm"}
+{"ts":"2026-03-29T16:47:52.774603022+00:00","action":"create","node_id":"GZ1W.PYl2","detail":"tests: archive/unarchive edge preservation scenarios"}
+{"ts":"2026-03-29T16:47:55.115154914+00:00","action":"surface","node_id":"GZ1W.c6XZ"}
+{"ts":"2026-03-29T16:47:55.116921091+00:00","action":"surface","node_id":"GZ1W.PYl2"}
+{"ts":"2026-03-29T16:48:25.700579997+00:00","action":"claim","node_id":"GZ1W.PYl2","part":"claude"}
+{"ts":"2026-03-29T16:48:25.702416131+00:00","action":"claim","node_id":"GZ1W.c6XZ","part":"claude"}
+{"ts":"2026-03-29T17:34:29.814807328+00:00","action":"integrate","node_id":"GZ1W.c6XZ","reason":"archive_node now moves edges to edges.jsonl instead of dropping"}
+{"ts":"2026-03-29T17:34:29.814847766+00:00","action":"surface","node_id":"GZ1W.gE7n","reason":"auto-surfaced: last blocker integrated"}
+{"ts":"2026-03-29T17:34:29.814875695+00:00","action":"surface","node_id":"GZ1W.h2MX","reason":"auto-surfaced: last blocker integrated"}
+{"ts":"2026-03-29T17:34:29.816354015+00:00","action":"integrate","node_id":"GZ1W.gE7n","reason":"unarchive_node restores node + edges from archive"}
+{"ts":"2026-03-29T17:34:29.816387054+00:00","action":"surface","node_id":"GZ1W.1CsZ","reason":"auto-surfaced: last blocker integrated"}
+{"ts":"2026-03-29T17:34:29.817874352+00:00","action":"integrate","node_id":"GZ1W.1CsZ","reason":"Unarchive subcommand wired up"}
+{"ts":"2026-03-29T17:34:29.819584323+00:00","action":"integrate","node_id":"GZ1W.h2MX","reason":"cmd_rm calls scrub_archived_edges"}
+{"ts":"2026-03-29T17:34:29.821094451+00:00","action":"integrate","node_id":"GZ1W.PYl2","reason":"9 integration tests covering all 6 scenarios"}
+{"ts":"2026-03-29T17:34:29.822904069+00:00","action":"integrate","node_id":"GZ1W","reason":"all subtasks complete, 161 tests pass"}

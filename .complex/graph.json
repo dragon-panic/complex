@@ -124,6 +124,78 @@
       "meta": {
         "_reason": "9 integration tests all pass"
       }
+    },
+    {
+      "id": "GZ1W",
+      "title": "unarchive command + preserve edges across archive/unarchive",
+      "state": "integrated",
+      "shadowed": false,
+      "part": null,
+      "created_at": "2026-03-29T16:47:28.206716946Z",
+      "updated_at": "2026-03-29T17:34:29.822609449Z",
+      "meta": {
+        "_reason": "all subtasks complete, 161 tests pass"
+      }
+    },
+    {
+      "id": "GZ1W.c6XZ",
+      "title": "store: archive edges to edges.jsonl instead of dropping",
+      "state": "integrated",
+      "shadowed": false,
+      "part": "claude",
+      "created_at": "2026-03-29T16:47:52.766729194Z",
+      "updated_at": "2026-03-29T17:34:29.814321055Z",
+      "meta": {
+        "_reason": "archive_node now moves edges to edges.jsonl instead of dropping"
+      }
+    },
+    {
+      "id": "GZ1W.gE7n",
+      "title": "store: unarchive_node — restore node + edges from archive",
+      "state": "integrated",
+      "shadowed": false,
+      "part": null,
+      "created_at": "2026-03-29T16:47:52.769004842Z",
+      "updated_at": "2026-03-29T17:34:29.816066195Z",
+      "meta": {
+        "_reason": "unarchive_node restores node + edges from archive"
+      }
+    },
+    {
+      "id": "GZ1W.1CsZ",
+      "title": "CLI: Unarchive subcommand",
+      "state": "integrated",
+      "shadowed": false,
+      "part": null,
+      "created_at": "2026-03-29T16:47:52.770835457Z",
+      "updated_at": "2026-03-29T17:34:29.817578642Z",
+      "meta": {
+        "_reason": "Unarchive subcommand wired up"
+      }
+    },
+    {
+      "id": "GZ1W.h2MX",
+      "title": "store: scrub archived edges on cx rm",
+      "state": "integrated",
+      "shadowed": false,
+      "part": null,
+      "created_at": "2026-03-29T16:47:52.772612693Z",
+      "updated_at": "2026-03-29T17:34:29.819265164Z",
+      "meta": {
+        "_reason": "cmd_rm calls scrub_archived_edges"
+      }
+    },
+    {
+      "id": "GZ1W.PYl2",
+      "title": "tests: archive/unarchive edge preservation scenarios",
+      "state": "integrated",
+      "shadowed": false,
+      "part": "claude",
+      "created_at": "2026-03-29T16:47:52.774292373Z",
+      "updated_at": "2026-03-29T17:34:29.820798891Z",
+      "meta": {
+        "_reason": "9 integration tests covering all 6 scenarios"
+      }
     }
   ],
   "edges": [
@@ -145,6 +217,21 @@
     {
       "from": "dUjp.MUrF",
       "to": "dUjp.rnDj",
+      "type": "blocks"
+    },
+    {
+      "from": "GZ1W.c6XZ",
+      "to": "GZ1W.gE7n",
+      "type": "blocks"
+    },
+    {
+      "from": "GZ1W.gE7n",
+      "to": "GZ1W.1CsZ",
+      "type": "blocks"
+    },
+    {
+      "from": "GZ1W.c6XZ",
+      "to": "GZ1W.h2MX",
       "type": "blocks"
     }
   ]

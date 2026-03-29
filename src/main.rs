@@ -108,6 +108,15 @@ enum Commands {
         ids: Option<String>,
     },
 
+    /// Restore an archived node back into the graph (as integrated).
+    /// Edges are restored when both endpoints are live.
+    Unarchive {
+        id: String,
+        /// Why this node is being restored
+        #[arg(long)]
+        reason: Option<String>,
+    },
+
     /// List shadowed nodes, or flag a node as shadowed
     Shadow {
         id: Option<String>,
@@ -305,6 +314,7 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Unclaim { id, reason } => cmd_unclaim(id, reason, cli.json),
         Commands::Integrate { id, reason } => cmd_integrate(id, reason, cli.json),
         Commands::Archive { ids } => cmd_archive(ids, cli.json),
+        Commands::Unarchive { id, reason } => cmd_unarchive(id, reason, cli.json),
         Commands::Shadow { id, reason } => cmd_shadow(id, reason, cli.json),
         Commands::Unshadow { id, reason } => cmd_unshadow(id, reason, cli.json),
         Commands::Show { id } => cmd_show(id, cli.json),
@@ -994,6 +1004,36 @@ fn cmd_archive(ids: Option<String>, json: bool) -> Result<()> {
     Ok(())
 }
 
+// ── unarchive ────────────────────────────────────────────────────────────────
+
+fn cmd_unarchive(partial: String, reason: Option<String>, json: bool) -> Result<()> {
+    let root = store::find_root()?;
+    let mut graph = store::load(&root)?;
+
+    // Check it's not already in the live graph
+    if graph.get_node(&partial).is_some() {
+        bail!("node {} is already in the live graph", partial);
+    }
+
+    store::migrate_archive_if_needed(&root).ok();
+    store::unarchive_node(&root, &mut graph, &partial)?;
+
+    let title = graph
+        .get_node(&partial)
+        .map(|n| n.title.clone())
+        .unwrap_or_default();
+
+    store::save(&root, &graph)?;
+    emit(&root, "unarchive", &partial, None, Some(&title), reason.as_deref());
+
+    if json {
+        println!("{}", serde_json::json!({ "id": partial, "title": title }));
+    } else {
+        println!("unarchived  {}  {}", partial, title);
+    }
+    Ok(())
+}
+
 // ── shadow / unshadow ─────────────────────────────────────────────────────────
 
 fn cmd_shadow(id: Option<String>, reason: Option<String>, json: bool) -> Result<()> {
@@ -1497,6 +1537,8 @@ fn cmd_rm(partial: String, reason: Option<String>, json: bool) -> Result<()> {
     // Archive the node (moves to archive.jsonl + body to archive/)
     store::migrate_archive_if_needed(&root).ok();
     store::archive_node(&root, &mut graph, &resolved)?;
+    // Scrub any previously archived edges referencing this node
+    store::scrub_archived_edges(&root, &resolved)?;
     store::save(&root, &graph)?;
 
     emit(&root, "rm", &resolved, None, Some(&title), reason.as_deref());
