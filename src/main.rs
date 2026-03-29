@@ -289,9 +289,6 @@ enum Commands {
         tag: Option<String>,
     },
 
-    /// Show registered agents and their last-seen time
-    Agents,
-
     /// Show tree + ready nodes (quick overview)
     Status,
 }
@@ -339,7 +336,6 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Log { limit } => cmd_log(limit, cli.json),
         Commands::Comment { id, body, tag, r#as, file, edit, rm } => cmd_comment(id, body.join(" "), tag, r#as, file, edit, rm, cli.json),
         Commands::Comments { id, tag } => cmd_comments(id, tag, cli.json),
-        Commands::Agents => cmd_agents(cli.json),
         Commands::Status => cmd_status(cli.json),
     }
 }
@@ -805,7 +801,6 @@ fn cmd_claim(partial: String, as_part: Option<String>, reason: Option<String>, j
         set_reason(node, r);
     }
     store::save(&root, &graph)?;
-    store::upsert_agent(&root, &part).ok();
     emit(&root, "claim", &resolved, Some(&part), None, reason.as_deref());
 
     if json {
@@ -1909,25 +1904,6 @@ fn cmd_log(limit: usize, json: bool) -> Result<()> {
     Ok(())
 }
 
-// ── agents ────────────────────────────────────────────────────────────────────
-
-fn cmd_agents(json: bool) -> Result<()> {
-    let root = store::find_root()?;
-    let agents = store::load_agents(&root)?;
-
-    if json {
-        println!("{}", serde_json::to_string_pretty(&agents)?);
-    } else if agents.is_empty() {
-        println!("no agents registered");
-    } else {
-        for a in &agents {
-            let ts_short = &a.last_seen[..19].replace('T', " ");
-            println!("{:<30}  last seen {}", a.name, ts_short);
-        }
-    }
-    Ok(())
-}
-
 // ── status ────────────────────────────────────────────────────────────────────
 
 fn cmd_status(json: bool) -> Result<()> {
@@ -2122,7 +2098,6 @@ fn cmd_comment(
     node.comments.push(comment);
     node.touch();
     store::save(&root, &graph)?;
-    store::upsert_agent(&root, &author).ok();
     emit(&root, "comment", &resolved, Some(&author), tag.as_deref(), None);
 
     if json {

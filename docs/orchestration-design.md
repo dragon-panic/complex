@@ -23,8 +23,7 @@ dependencies (blocks edges), hierarchy (encoded in IDs), and metadata
 ### Agents (bottom-right — executors)
 
 Entities that claim issues, do work, and integrate. Currently just a string
-label (`CX_PART`). Complex records what they've claimed via `agents.json`
-(upserted on every `cx claim`) and the events log.
+label (`CX_PART`). Complex records what they've claimed via the events log.
 
 An agent does not live inside complex. It acts *on* complex.
 
@@ -80,7 +79,7 @@ something to act on.
 
 ## What complex should add to enable this model
 
-These three additions (now shipped in v0.1.0) make complex composable
+These two additions (now shipped in v0.1.0) make complex composable
 without overstepping into orchestration:
 
 1. **Node metadata** (`cx meta <id> <json>`) — orchestrators and workflow
@@ -93,8 +92,10 @@ without overstepping into orchestration:
    mutation. An orchestrator can `tail -f` or process on demand. Enables
    reactive orchestration without polling graph.json.
 
-3. **Agent registry** (`agents.json`, bounded) — upserted on every claim.
-   Lets an orchestrator know who is active and when they were last seen.
+Note: **Agent registry** (`agents.json`) was previously managed by complex
+but has been removed — tracking agent liveness is an orchestrator concern.
+Any existing `agents.json` files are left on disk for backwards compatibility
+but are no longer read or written by complex.
 
 ---
 
@@ -144,7 +145,7 @@ Neither lives inside it.
 A minimal orchestrator for multi-agent Claude Code workflows might:
 
 1. Read `cx surface --json` to find available work
-2. Read `cx agents --json` to see active agents and their load
+2. Track agent liveness itself (e.g. via its own registry)
 3. Assign: `cx claim <id> --as <agent>` on their behalf, or signal them
 4. Watch `events.jsonl` for claims, integrations, stalls
 5. Run `cx therapy --json` on a schedule, escalate stale items
@@ -158,4 +159,4 @@ with `--json`. No new APIs needed in complex.
 - Does the orchestrator itself get a `CX_PART` identity in complex?
 - Should `cx meta` support merge-patch (update a key) vs full replace?
 - Should there be a `cx watch` command that streams events.jsonl in real time?
-- Should agent capability be declared in `agents.json` or always in node `meta`?
+- Should agent capability be declared in an orchestrator-managed registry or in node `meta`?

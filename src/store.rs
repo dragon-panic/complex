@@ -15,7 +15,6 @@ const ARCHIVE_DIR: &str = "archive";
 const ARCHIVE_JSONL: &str = "archive.jsonl";
 const EVENTS_JSONL: &str = "events.jsonl";
 const EVENTS_DIR: &str = "events";
-const AGENTS_FILE: &str = "agents.json";
 
 /// Lines before rotating the active archive file.
 const ARCHIVE_ROTATE_LINES: usize = 200;
@@ -372,47 +371,6 @@ pub fn recent_events(root: &Path, limit: usize) -> Result<Vec<serde_json::Value>
     Ok(all.into_iter().skip(skip).collect())
 }
 
-// ── agent registry ────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AgentEntry {
-    pub name: String,
-    pub last_seen: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<serde_json::Value>,
-}
-
-pub fn upsert_agent(root: &Path, name: &str) -> Result<()> {
-    let mut agents = load_agents(root)?;
-    let ts = Utc::now().to_rfc3339();
-    if let Some(entry) = agents.iter_mut().find(|a| a.name == name) {
-        entry.last_seen = ts;
-    } else {
-        agents.push(AgentEntry {
-            name: name.to_string(),
-            last_seen: ts,
-            meta: None,
-        });
-    }
-    save_agents(root, &agents)
-}
-
-pub fn load_agents(root: &Path) -> Result<Vec<AgentEntry>> {
-    let path = root.join(AGENTS_FILE);
-    if !path.exists() {
-        return Ok(vec![]);
-    }
-    let raw = fs::read_to_string(&path)?;
-    Ok(serde_json::from_str(&raw).unwrap_or_default())
-}
-
-fn save_agents(root: &Path, agents: &[AgentEntry]) -> Result<()> {
-    fs::write(
-        root.join(AGENTS_FILE),
-        serde_json::to_string_pretty(agents)?,
-    )?;
-    Ok(())
-}
 
 /// Collect all IDs from archived nodes (active + rotated JSONL files).
 pub fn load_archived_ids(root: &Path) -> Result<std::collections::HashSet<String>> {
