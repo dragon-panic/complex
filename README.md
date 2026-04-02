@@ -4,8 +4,8 @@ A hierarchical issue tracker for agents. Local-first, git-native, CLI-only.
 
 ```
 $ cx surface
-JMpv.izeU   Write tests         —
-JMpv.9us3   README              —
+izeU   Write tests         —
+9us3   README              —
 ```
 
 ## Install
@@ -36,9 +36,9 @@ cx new a3F2 "Set up OAuth provider"
 cx new a3F2 "Write auth middleware"
 
 # Surface tasks so agents can claim them
-cx surface a3F2.bX7c
-cx surface a3F2.cY8d
-cx surface a3F2.dZ9e
+cx surface bX7c
+cx surface cY8d
+cx surface dZ9e
 
 # Declare ordering when it matters
 cx block bX7c dZ9e             # JWT must finish before middleware
@@ -71,15 +71,16 @@ shadowed (claimed but stuck). `cx shadow <id>` / `cx unshadow <id>`.
 **Parts** — agents or humans that claim work. Set via `cx claim --as <name>`
 or the `CX_PART` environment variable.
 
-**IDs** — dot-separated base62 segments encoding hierarchy:
+**IDs** — flat 4-character base62 strings. Hierarchy is tracked via an explicit
+`parent` field, not the ID itself:
 
 ```
-a3F2              ← root complex
-a3F2.bX7c         ← child task
-a3F2.bX7c.Qd4e   ← grandchild
+a3F2   ← root complex
+bX7c   ← child task  (parent: a3F2)
+Qd4e   ← grandchild  (parent: bX7c)
 ```
 
-Commands accept the leaf segment alone when unambiguous: `cx show bX7c`.
+Commands accept a short suffix when unambiguous: `cx show bX7c`.
 
 **Edges** — relationships between nodes:
 
@@ -104,21 +105,27 @@ Orchestrators and external tools use this for workflow hints, priorities, etc.
 
 ```
 .complex/
-  graph.json                ← active nodes: states, parts, edges
-  events.jsonl              ← append-only audit log of mutations
+  nodes/                    ← one JSON file per live node (metadata + edges)
+    a3F2.json
+    bX7c.json
+  events/                   ← per-invocation event files
+    2026-04-02T17-20-02.jsonl
+  events.jsonl              ← legacy append-only audit log
   issues/                   ← markdown body per node
     a3F2.md
-    a3F2.bX7c.md
+    bX7c.md
   issues/
-    a3F2.bX7c.comments.json ← comment threads
+    bX7c.comments.json      ← comment threads
   archive/
-    archive.jsonl           ← archived node metadata (rotates monthly)
-    edges.jsonl             ← archived edges
+    nodes/                  ← one JSON file per archived node
+      c5D8.json
     c5D8.md                 ← archived bodies
 ```
 
-On every invocation `cx` reads `graph.json` into an in-memory SQLite database,
-runs the query or mutation, then writes back. No daemon, no server, no port.
+Each node is its own file, so parallel branches editing different nodes never
+conflict. On every invocation `cx` loads the node files into an in-memory
+SQLite database, runs the query or mutation, then writes back. No daemon, no
+server, no port.
 
 `git log -- .complex/` tells the full story of what happened.
 

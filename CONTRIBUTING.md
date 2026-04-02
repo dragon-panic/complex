@@ -39,7 +39,7 @@ install before committing so all projects get the update immediately.
 src/
   main.rs    — CLI entry point (clap). All subcommands defined and dispatched here.
   model.rs   — Data types: Node, Edge, EdgeType, State, Comment, Graph.
-  store.rs   — Persistence: load/save graph.json, issues/, comments, archive, events.
+  store.rs   — Persistence: load/save per-node files, issues/, comments, archive, events.
   db.rs      — In-memory SQLite: materializes the graph for queries (cx surface, etc).
   id.rs      — Base62 ID generation with collision detection and retry.
 tests/

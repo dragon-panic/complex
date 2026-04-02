@@ -67,16 +67,16 @@ No daemon, no persistent process, no port.
 
 ### Events log
 
-`events.jsonl` is an append-only record of every mutation. It rotates when
-it exceeds 1000 lines. An orchestrator can process events to react to
-state changes without polling `graph.json`.
+Each `cx` invocation writes events to `events/{timestamp}.jsonl`. An
+orchestrator can process event files to react to state changes without
+polling. A legacy `events.jsonl` may also exist and is read on load.
 
 ### Archive
 
-When nodes are integrated and then archived, they move from `graph.json` to
-`archive/archive.jsonl` (append-only, rotates monthly). Edges involving
-archived nodes are preserved in `archive/edges.jsonl` and restored if a
-node is unarchived.
+When nodes are integrated and then archived, their node file moves from
+`nodes/{id}.json` to `archive/nodes/{id}.json`. Outgoing edges travel
+with the node. Incoming edges from live nodes stay dormant in those nodes'
+files (filtered on load, auto-reconnect on unarchive).
 
 ## Metadata
 
