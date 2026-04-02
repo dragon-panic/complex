@@ -1,3 +1,5 @@
 /target
 .complex/graph.json.tmp
+.complex/graph.json.bak
 .complex/graph.lock
+.complex/cx.lock

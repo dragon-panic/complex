@@ -391,15 +391,10 @@ fn subtree_has_tag(graph: &model::Graph, node_id: &str, tag: &str) -> bool {
 /// Returns the ID of the first ancestor (or self) that has an unresolved blocker,
 /// or None if the node is unblocked.
 fn ancestor_blocker(graph: &model::Graph, id: &str) -> Option<String> {
-    // Collect self + all ancestor IDs from the dot-separated hierarchy
-    let mut ancestors = vec![id.to_string()];
-    let mut cur = id.to_string();
-    while let Some(dot) = cur.rfind('.') {
-        cur = cur[..dot].to_string();
-        ancestors.push(cur.clone());
-    }
+    let mut chain = vec![id.to_string()];
+    chain.extend(graph.ancestors(id));
 
-    for ancestor in &ancestors {
+    for ancestor in &chain {
         let has_blocker = graph.edges.iter().any(|e| {
             e.to == *ancestor
                 && e.edge_type == model::EdgeType::Blocks
@@ -523,12 +518,9 @@ a latent node before claiming it.
 
 ## IDs
 
-Hierarchy is encoded in the ID:
-  a3F2              root complex
-  a3F2.bX7c         child task
-  a3F2.bX7c.Qd4e   grandchild subtask
-
-Short IDs (leaf segment) work when unambiguous:  cx claim bX7c
+Every node has a flat 4-character base62 ID (e.g. `a3F2`).
+Parent-child relationships use an explicit `parent` field, not the ID.
+Move (`cx move`) just updates the parent — IDs never change.
 
 ## Environment
 
@@ -594,7 +586,7 @@ fn cmd_add(title: String, body: Option<String>, body_file: Option<String>, by: O
     let filed_by = by.or_else(|| std::env::var("CX_FILED_BY").ok());
 
     let existing = collect_existing_ids(&root, &graph)?;
-    let new_id = id::generate(None, &existing)?;
+    let new_id = id::generate(&existing)?;
     let mut node = model::Node::new(new_id.clone(), title.clone());
     node.filed_by = filed_by;
     node.tags = tags;
@@ -629,8 +621,9 @@ fn cmd_new(parent_partial: String, title: String, body: Option<String>, body_fil
     let parent_id = id::resolve(&graph, &parent_partial)
         .map_err(|_| anyhow::anyhow!("parent '{}' not found — use cx tree to list nodes", parent_partial))?;
     let existing = collect_existing_ids(&root, &graph)?;
-    let new_id = id::generate(Some(&parent_id), &existing)?;
+    let new_id = id::generate(&existing)?;
     let mut node = model::Node::new(new_id.clone(), title.clone());
+    node.parent = Some(parent_id.clone());
     node.filed_by = filed_by;
     node.tags = tags;
     graph.nodes.push(node);
@@ -1409,96 +1402,44 @@ fn cmd_move(partial: String, new_parent: Option<String>, to_root: bool, reason: 
     let mut graph = store::load(&root)?;
     let resolved = id::resolve(&graph, &partial)?;
 
-    // Resolve new parent if given
     let new_parent_id = match &new_parent {
         Some(p) => {
             let pid = id::resolve(&graph, p)?;
-            // Can't move under yourself or your own descendant
-            if pid == resolved || pid.starts_with(&format!("{}.", resolved)) {
+            if pid == resolved || graph.is_descendant_of(&pid, &resolved) {
                 bail!("cannot move {} under its own descendant {}", resolved, pid);
             }
             Some(pid)
         }
-        None => None,
+        None => None, // --root: promote to root
     };
 
-    // Extract the short (leaf) segment of the node's current ID
-    let short = resolved.rsplit('.').next().unwrap();
-    let new_id = match &new_parent_id {
-        Some(pid) => format!("{}.{}", pid, short),
-        None => short.to_string(),
-    };
-
-    if new_id == resolved {
+    // Check current parent matches target
+    let current_parent = graph.get_node(&resolved)
+        .and_then(|n| n.parent.clone());
+    if current_parent == new_parent_id {
         bail!("{} is already there", resolved);
     }
 
-    // Check for ID collision
-    if graph.get_node(&new_id).is_some() {
-        bail!("a node with id {} already exists", new_id);
-    }
-
-    // Collect all nodes to rename: the node itself + all descendants
-    let old_prefix = format!("{}.", resolved);
-    let renames: Vec<(String, String)> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.id == resolved || n.id.starts_with(&old_prefix))
-        .map(|n| {
-            let new = if n.id == resolved {
-                new_id.clone()
-            } else {
-                format!("{}{}", new_id, &n.id[resolved.len()..])
-            };
-            (n.id.clone(), new)
-        })
-        .collect();
-
-    // Check for collisions with descendants too
-    for (_, new) in &renames {
-        if graph.nodes.iter().any(|n| n.id == *new && !renames.iter().any(|(old, _)| *old == n.id)) {
-            bail!("a node with id {} already exists", new);
-        }
-    }
-
-    // Rename body files
-    let issues_dir = root.join("issues");
-    for (old, new) in &renames {
-        let src = issues_dir.join(format!("{}.md", old));
-        let dst = issues_dir.join(format!("{}.md", new));
-        if src.exists() {
-            std::fs::rename(&src, &dst)?;
-        }
-    }
-
-    // Update node IDs
-    for node in &mut graph.nodes {
-        if let Some((_, new)) = renames.iter().find(|(old, _)| *old == node.id) {
-            node.id = new.clone();
-            node.touch();
-        }
-    }
-
-    // Update edge references
-    for edge in &mut graph.edges {
-        if let Some((_, new)) = renames.iter().find(|(old, _)| *old == edge.from) {
-            edge.from = new.clone();
-        }
-        if let Some((_, new)) = renames.iter().find(|(old, _)| *old == edge.to) {
-            edge.to = new.clone();
-        }
-    }
+    let node = graph.get_node_mut(&resolved)
+        .ok_or_else(|| anyhow::anyhow!("node not found: {}", resolved))?;
+    let old_parent = node.parent.clone();
+    node.parent = new_parent_id.clone();
+    node.touch();
 
     store::save(&root, &graph)?;
-    emit(&root, "move", &new_id, None, Some(&resolved), reason.as_deref());
+    emit(&root, "move", &resolved, None,
+         old_parent.as_deref().or(Some("root")), reason.as_deref());
 
     if json {
-        let moved: Vec<_> = renames.iter().map(|(old, new)| serde_json::json!({"old": old, "new": new})).collect();
-        println!("{}", serde_json::json!({ "id": new_id, "from": resolved, "moved": moved }));
+        println!("{}", serde_json::json!({
+            "id": resolved,
+            "old_parent": old_parent,
+            "new_parent": new_parent_id,
+        }));
     } else {
-        for (old, new) in &renames {
-            println!("{}  →  {}", old, new);
-        }
+        let from = old_parent.as_deref().unwrap_or("(root)");
+        let to = new_parent_id.as_deref().unwrap_or("(root)");
+        println!("{}  moved  {} → {}", resolved, from, to);
     }
     Ok(())
 }

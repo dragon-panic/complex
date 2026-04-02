@@ -6,17 +6,13 @@ use crate::model::Graph;
 const B62: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const MAX_RETRIES: usize = 10;
 
-pub fn generate(parent: Option<&str>, existing: &HashSet<String>) -> Result<String> {
+pub fn generate(existing: &HashSet<String>) -> Result<String> {
     for _ in 0..MAX_RETRIES {
-        let seg: String = (0..4)
+        let id: String = (0..4)
             .map(|_| B62[rand::random::<usize>() % 62] as char)
             .collect();
-        let full = match parent {
-            Some(p) => format!("{}.{}", p, seg),
-            None => seg,
-        };
-        if !existing.contains(&full) {
-            return Ok(full);
+        if !existing.contains(&id) {
+            return Ok(id);
         }
     }
     bail!("failed to generate unique ID after {} attempts", MAX_RETRIES)

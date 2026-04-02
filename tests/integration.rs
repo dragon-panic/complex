@@ -53,18 +53,64 @@ fn archive(dir: &TempDir, id: &str) {
     cx(dir).args(["archive", "--ids", id]).assert().success();
 }
 
+/// Reconstruct a graph-json-like structure from per-node files.
+/// Filters dormant edges (where target is not a live node), matching runtime behavior.
 fn graph_json(dir: &TempDir) -> serde_json::Value {
-    let raw = std::fs::read_to_string(dir.path().join(".complex/graph.json")).unwrap();
-    serde_json::from_str(&raw).unwrap()
+    let nodes_dir = dir.path().join(".complex/nodes");
+    let mut nodes = Vec::new();
+    let mut all_edges = Vec::new();
+    let mut live_ids = std::collections::HashSet::new();
+    if nodes_dir.exists() {
+        for entry in std::fs::read_dir(&nodes_dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                let raw = std::fs::read_to_string(&path).unwrap();
+                let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+                let node_id = v["id"].as_str().unwrap().to_string();
+                live_ids.insert(node_id.clone());
+                if let Some(node_edges) = v["edges"].as_array() {
+                    for e in node_edges {
+                        all_edges.push(serde_json::json!({
+                            "from": node_id,
+                            "to": e["to"],
+                            "type": e["type"],
+                        }));
+                    }
+                }
+                nodes.push(v);
+            }
+        }
+    }
+    // Filter dormant edges (target not in live graph)
+    let edges: Vec<_> = all_edges.into_iter()
+        .filter(|e| live_ids.contains(e["to"].as_str().unwrap()))
+        .collect();
+    serde_json::json!({ "version": 1, "nodes": nodes, "edges": edges })
 }
 
 fn archive_entries(dir: &TempDir) -> Vec<serde_json::Value> {
-    let raw =
-        std::fs::read_to_string(dir.path().join(".complex/archive/archive.jsonl")).unwrap();
-    raw.lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect()
+    let archive_nodes = dir.path().join(".complex/archive/nodes");
+    let mut entries = Vec::new();
+    if archive_nodes.exists() {
+        for entry in std::fs::read_dir(&archive_nodes).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                let raw = std::fs::read_to_string(&path).unwrap();
+                entries.push(serde_json::from_str(&raw).unwrap());
+            }
+        }
+    }
+    // Also check legacy JSONL
+    let legacy = dir.path().join(".complex/archive/archive.jsonl");
+    if legacy.exists() {
+        let raw = std::fs::read_to_string(legacy).unwrap();
+        for line in raw.lines().filter(|l| !l.trim().is_empty()) {
+            entries.push(serde_json::from_str(line).unwrap());
+        }
+    }
+    entries
 }
 
 fn unarchive(dir: &TempDir, id: &str) {
@@ -90,16 +136,72 @@ fn graph_node_ids(dir: &TempDir) -> Vec<String> {
         .collect()
 }
 
+/// Collect all non-live edges: outgoing edges from archived nodes +
+/// dormant edges from live nodes pointing to non-live targets.
 fn archived_edges(dir: &TempDir) -> Vec<serde_json::Value> {
-    let path = dir.path().join(".complex/archive/edges.jsonl");
-    if !path.exists() {
-        return vec![];
+    let mut edges = Vec::new();
+
+    // Collect live node IDs
+    let nodes_dir = dir.path().join(".complex/nodes");
+    let mut live_ids = std::collections::HashSet::new();
+    if nodes_dir.exists() {
+        for entry in std::fs::read_dir(&nodes_dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                let raw = std::fs::read_to_string(&path).unwrap();
+                let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+                live_ids.insert(v["id"].as_str().unwrap().to_string());
+            }
+        }
     }
-    let raw = std::fs::read_to_string(path).unwrap();
-    raw.lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect()
+
+    // Edges from archived node files
+    let archive_nodes = dir.path().join(".complex/archive/nodes");
+    if archive_nodes.exists() {
+        for entry in std::fs::read_dir(&archive_nodes).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                let raw = std::fs::read_to_string(&path).unwrap();
+                let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+                let from = v["id"].as_str().unwrap().to_string();
+                if let Some(node_edges) = v["edges"].as_array() {
+                    for e in node_edges {
+                        edges.push(serde_json::json!({
+                            "from": from,
+                            "to": e["to"],
+                            "type": e["type"],
+                        }));
+                    }
+                }
+            }
+        }
+    }
+
+    // Dormant edges from live nodes (pointing to non-live targets)
+    if nodes_dir.exists() {
+        for entry in std::fs::read_dir(&nodes_dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                let raw = std::fs::read_to_string(&path).unwrap();
+                let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+                let from = v["id"].as_str().unwrap().to_string();
+                if let Some(node_edges) = v["edges"].as_array() {
+                    for e in node_edges {
+                        let to = e["to"].as_str().unwrap();
+                        if !live_ids.contains(to) {
+                            edges.push(serde_json::json!({
+                                "from": from,
+                                "to": to,
+                                "type": e["type"],
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    edges
 }
 
 fn has_edge(edges: &[serde_json::Value], from: &str, to: &str) -> bool {
@@ -155,13 +257,12 @@ fn init_creates_structure() {
 
     let root = dir.path().join(".complex");
     assert!(root.exists());
-    assert!(root.join("graph.json").exists());
+    assert!(root.join("nodes").is_dir());
     assert!(root.join("issues").is_dir());
     assert!(root.join("archive").is_dir());
 
-    // graph.json should be valid with empty nodes/edges
+    // Empty project should have no node files
     let g = graph_json(&dir);
-    assert_eq!(g["version"], 1);
     assert!(g["nodes"].as_array().unwrap().is_empty());
     assert!(g["edges"].as_array().unwrap().is_empty());
 }
@@ -191,7 +292,7 @@ fn cx_dir_overrides_root() {
     cx(&dir).arg("init")
         .env("CX_DIR", &custom)
         .assert().success();
-    assert!(custom.join("graph.json").exists());
+    assert!(custom.join("nodes").is_dir());
     assert!(!dir.path().join(".complex").exists());
 
     // add with CX_DIR
@@ -375,18 +476,21 @@ fn add_multi_word_title() {
 // ── cx new ────────────────────────────────────────────────────────────────────
 
 #[test]
-fn new_creates_child_with_correct_prefix() {
+fn new_creates_child_with_flat_id_and_parent_field() {
     let dir = TempDir::new().unwrap();
     init(&dir);
     let parent = add(&dir, "Auth");
     let child = new_child(&dir, &parent, "Implement JWT");
 
-    // child id is parent.XXXX
-    assert!(child.starts_with(&format!("{}.", parent)));
-    assert_eq!(child.len(), parent.len() + 5); // dot + 4 chars
+    // Flat 4-char ID, no dots
+    assert_eq!(child.len(), 4);
+    assert!(!child.contains('.'));
 
+    // parent field set correctly in graph
     let g = graph_json(&dir);
     let nodes = g["nodes"].as_array().unwrap();
+    let child_node = nodes.iter().find(|n| n["id"].as_str().unwrap() == child).unwrap();
+    assert_eq!(child_node["parent"].as_str().unwrap(), parent);
     assert_eq!(nodes.len(), 2);
 }
 
@@ -395,19 +499,31 @@ fn new_accepts_short_parent_id() {
     let dir = TempDir::new().unwrap();
     init(&dir);
     let parent = add(&dir, "Auth");
-    // Use only the 4-char leaf segment
     let child = new_child(&dir, &parent, "JWT task");
-    assert!(child.starts_with(&format!("{}.", parent)));
+    assert_eq!(child.len(), 4);
+
+    let g = graph_json(&dir);
+    let child_node = g["nodes"].as_array().unwrap()
+        .iter().find(|n| n["id"].as_str().unwrap() == child).unwrap();
+    assert_eq!(child_node["parent"].as_str().unwrap(), parent);
 }
 
 #[test]
-fn new_grandchild_has_two_dots() {
+fn new_grandchild_has_parent_chain() {
     let dir = TempDir::new().unwrap();
     init(&dir);
     let root = add(&dir, "Root");
     let child = new_child(&dir, &root, "Child");
     let grandchild = new_child(&dir, &child, "Grandchild");
-    assert_eq!(grandchild.matches('.').count(), 2);
+
+    assert_eq!(grandchild.len(), 4);
+
+    let g = graph_json(&dir);
+    let nodes = g["nodes"].as_array().unwrap();
+    let gc_node = nodes.iter().find(|n| n["id"].as_str().unwrap() == grandchild).unwrap();
+    assert_eq!(gc_node["parent"].as_str().unwrap(), child);
+    let c_node = nodes.iter().find(|n| n["id"].as_str().unwrap() == child).unwrap();
+    assert_eq!(c_node["parent"].as_str().unwrap(), root);
 }
 
 #[test]
@@ -417,6 +533,49 @@ fn new_bad_parent_fails_with_hint() {
     cx(&dir).args(["new", "doesnotexist", "title"])
         .assert().failure()
         .stderr(contains("cx tree"));
+}
+
+// ── parent field ─────────────────────────────────────────────────────────────
+
+#[test]
+fn parent_field_set_on_new_child() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let parent = add(&dir, "Root");
+    let child = new_child(&dir, &parent, "Child");
+
+    let g = graph_json(&dir);
+    let nodes = g["nodes"].as_array().unwrap();
+    let child_node = nodes.iter().find(|n| n["id"].as_str().unwrap() == child).unwrap();
+    assert_eq!(child_node["parent"].as_str().unwrap(), parent);
+}
+
+#[test]
+fn parent_field_none_for_root() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let root = add(&dir, "Root");
+
+    let g = graph_json(&dir);
+    let nodes = g["nodes"].as_array().unwrap();
+    let root_node = nodes.iter().find(|n| n["id"].as_str().unwrap() == root).unwrap();
+    assert!(root_node.get("parent").is_none() || root_node["parent"].is_null());
+}
+
+#[test]
+fn parent_field_updated_on_move() {
+    let dir = TempDir::new().unwrap();
+    init(&dir);
+    let a = add(&dir, "A");
+    let b = add(&dir, "B");
+    let child = new_child(&dir, &a, "Child");
+
+    cx(&dir).args(["move", &child, &b]).assert().success();
+
+    let g = graph_json(&dir);
+    let nodes = g["nodes"].as_array().unwrap();
+    let moved = nodes.iter().find(|n| n["id"].as_str().unwrap() == child).unwrap();
+    assert_eq!(moved["parent"].as_str().unwrap(), b);
 }
 
 // ── cx surface ────────────────────────────────────────────────────────────────
@@ -918,11 +1077,13 @@ fn short_id_resolves_unambiguously() {
 
 #[test]
 fn ambiguous_short_id_fails() {
+    // Legacy repos with dot-separated IDs: two nodes sharing the same leaf
     let dir = TempDir::new().unwrap();
-    init(&dir);
+    let root = dir.path().join(".complex");
+    std::fs::create_dir_all(root.join("issues")).unwrap();
+    std::fs::create_dir_all(root.join("archive")).unwrap();
+    std::fs::create_dir_all(root.join("events")).unwrap();
 
-    // Write two nodes that share the same leaf segment (ZZZZ)
-    // but have different parent prefixes — neither is an exact match for "ZZZZ"
     let g = serde_json::json!({
         "version": 1,
         "nodes": [
@@ -947,10 +1108,7 @@ fn ambiguous_short_id_fails() {
         ],
         "edges": []
     });
-    std::fs::write(
-        dir.path().join(".complex/graph.json"),
-        serde_json::to_string_pretty(&g).unwrap(),
-    ).unwrap();
+    std::fs::write(root.join("graph.json"), serde_json::to_string_pretty(&g).unwrap()).unwrap();
 
     cx(&dir).args(["show", "ZZZZ"]).assert().failure()
         .stderr(contains("ambiguous"));
@@ -1374,20 +1532,12 @@ fn therapy_surfaces_stale_claimed_nodes() {
     surface_id(&dir, &id);
     claim(&dir, &id, "agent-1");
 
-    // Backdate updated_at to 2 days ago
-    let raw = std::fs::read_to_string(dir.path().join(".complex/graph.json")).unwrap();
-    let updated = raw.replace(
-        &format!("\"part\": \"agent-1\""),
-        "\"part\": \"agent-1\"",
-    );
-    // Replace updated_at with old timestamp via JSON manipulation
-    let mut g: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    g["nodes"][0]["updated_at"] = serde_json::json!("2026-01-01T00:00:00Z");
-    std::fs::write(
-        dir.path().join(".complex/graph.json"),
-        serde_json::to_string_pretty(&g).unwrap(),
-    ).unwrap();
-    drop(updated);
+    // Backdate updated_at to 2 days ago by editing the per-node file
+    let node_path = dir.path().join(format!(".complex/nodes/{}.json", id));
+    let raw = std::fs::read_to_string(&node_path).unwrap();
+    let mut node: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    node["updated_at"] = serde_json::json!("2026-01-01T00:00:00Z");
+    std::fs::write(&node_path, serde_json::to_string_pretty(&node).unwrap()).unwrap();
 
     cx(&dir).args(["therapy"]).assert().success()
         .stdout(contains("Stale Task"))
@@ -1823,20 +1973,27 @@ fn filed_by_survives_roundtrip() {
 
 #[test]
 fn old_graph_without_filed_by_loads_fine() {
-    // Simulate an old graph.json that has no filed_by field
+    // Simulate an old graph.json that has no filed_by field (legacy migration)
     let dir = TempDir::new().unwrap();
-    init(&dir);
+    let root = dir.path().join(".complex");
+    std::fs::create_dir_all(root.join("issues")).unwrap();
+    std::fs::create_dir_all(root.join("archive")).unwrap();
+    std::fs::create_dir_all(root.join("events")).unwrap();
 
-    // Write a graph.json without filed_by
+    // Write a legacy graph.json WITHOUT nodes/ dir
     let graph = r#"{"version":1,"nodes":[{"id":"test","title":"Old node","state":"latent","shadowed":false,"part":null,"created_at":"2026-01-01T00:00:00+00:00","updated_at":"2026-01-01T00:00:00+00:00"}],"edges":[]}"#;
-    std::fs::write(dir.path().join(".complex/graph.json"), graph).unwrap();
+    std::fs::write(root.join("graph.json"), graph).unwrap();
 
-    // Should load without error
+    // Should load via migration and auto-create nodes/
     let out = cx(&dir).args(["--json", "show", "test"]).output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["title"], "Old node");
     assert!(v["filed_by"].is_null());
+
+    // Migration should have created per-node files
+    assert!(root.join("nodes/test.json").exists());
+    assert!(root.join("graph.json.bak").exists());
 }
 
 #[test]
@@ -1878,12 +2035,11 @@ fn move_reparents_node_under_new_parent() {
 
     cx(&dir).args(["move", &child, &b]).assert().success();
 
+    // ID stays the same, parent field changes
     let g = graph_json(&dir);
     let nodes = g["nodes"].as_array().unwrap();
-    let short = child.rsplit('.').next().unwrap();
-    let new_id = format!("{}.{}", b, short);
-    assert!(nodes.iter().any(|n| n["id"] == new_id), "child should have new id under parent B");
-    assert!(!nodes.iter().any(|n| n["id"] == child.as_str()), "old id should be gone");
+    let child_node = nodes.iter().find(|n| n["id"].as_str().unwrap() == child).unwrap();
+    assert_eq!(child_node["parent"].as_str().unwrap(), b);
 }
 
 #[test]
@@ -1892,13 +2048,14 @@ fn move_promotes_to_root() {
     init(&dir);
     let parent = add(&dir, "Parent");
     let child = new_child(&dir, &parent, "Child");
-    let short = child.rsplit('.').next().unwrap().to_string();
 
     cx(&dir).args(["move", &child, "--root"]).assert().success();
 
     let g = graph_json(&dir);
     let nodes = g["nodes"].as_array().unwrap();
-    assert!(nodes.iter().any(|n| n["id"] == short.as_str()), "child should be a root node now");
+    let child_node = nodes.iter().find(|n| n["id"].as_str().unwrap() == child).unwrap();
+    assert!(child_node.get("parent").is_none() || child_node["parent"].is_null(),
+        "promoted to root should have no parent");
 }
 
 #[test]
@@ -1912,18 +2069,17 @@ fn move_carries_children_along() {
 
     cx(&dir).args(["move", &child, &b]).assert().success();
 
+    // child's parent changed to b, grandchild's parent stays child (unchanged)
     let g = graph_json(&dir);
     let nodes = g["nodes"].as_array().unwrap();
-    let child_short = child.rsplit('.').next().unwrap();
-    let gc_short = grandchild.rsplit('.').next().unwrap();
-    let new_child_id = format!("{}.{}", b, child_short);
-    let new_gc_id = format!("{}.{}.{}", b, child_short, gc_short);
-    assert!(nodes.iter().any(|n| n["id"] == new_child_id), "child should be under B");
-    assert!(nodes.iter().any(|n| n["id"] == new_gc_id), "grandchild should follow");
+    let child_node = nodes.iter().find(|n| n["id"].as_str().unwrap() == child).unwrap();
+    assert_eq!(child_node["parent"].as_str().unwrap(), b);
+    let gc_node = nodes.iter().find(|n| n["id"].as_str().unwrap() == grandchild).unwrap();
+    assert_eq!(gc_node["parent"].as_str().unwrap(), child, "grandchild parent unchanged");
 }
 
 #[test]
-fn move_updates_edges() {
+fn move_preserves_edges() {
     let dir = TempDir::new().unwrap();
     init(&dir);
     let a = add(&dir, "A");
@@ -1934,11 +2090,10 @@ fn move_updates_edges() {
     cx(&dir).args(["block", &blocker, &child]).assert().success();
     cx(&dir).args(["move", &child, &b]).assert().success();
 
+    // Edge still points to same ID (IDs don't change on move)
     let g = graph_json(&dir);
     let edges = g["edges"].as_array().unwrap();
-    let child_short = child.rsplit('.').next().unwrap();
-    let new_child_id = format!("{}.{}", b, child_short);
-    assert!(edges.iter().any(|e| e["to"] == new_child_id), "edge should point to new id");
+    assert!(edges.iter().any(|e| e["to"].as_str().unwrap() == child), "edge should still reference same id");
 }
 
 #[test]
@@ -1955,24 +2110,21 @@ fn move_under_self_fails() {
 }
 
 #[test]
-fn move_body_file_follows() {
+fn move_body_file_stays_in_place() {
     let dir = TempDir::new().unwrap();
     init(&dir);
     let a = add(&dir, "A");
     let b = add(&dir, "B");
     let child = new_child(&dir, &a, "Child");
 
-    // Write a body
     cx(&dir).args(["edit", &child, "--body", "hello world"]).assert().success();
-
     cx(&dir).args(["move", &child, &b]).assert().success();
 
-    let child_short = child.rsplit('.').next().unwrap();
-    let new_id = format!("{}.{}", b, child_short);
-    let body_path = dir.path().join(format!(".complex/issues/{}.md", new_id));
-    assert!(body_path.exists(), "body file should be at new path");
-    let old_path = dir.path().join(format!(".complex/issues/{}.md", child));
-    assert!(!old_path.exists(), "old body file should be gone");
+    // ID doesn't change, so body file stays at same path
+    let body_path = dir.path().join(format!(".complex/issues/{}.md", child));
+    assert!(body_path.exists(), "body file should still be at original path");
+    let content = std::fs::read_to_string(&body_path).unwrap();
+    assert_eq!(content, "hello world");
 }
 
 #[test]
@@ -2347,10 +2499,10 @@ fn tag_denormalized_on_archive() {
     integrate(&dir, &child);
     archive(&dir, &child);
 
-    // Read archive.jsonl and verify the child has the inherited tag
-    let archive_path = dir.path().join(".complex/archive/archive.jsonl");
+    // Read archived node file and verify the child has the inherited tag
+    let archive_path = dir.path().join(format!(".complex/archive/nodes/{}.json", child));
     let raw = std::fs::read_to_string(&archive_path).unwrap();
-    let archived: serde_json::Value = serde_json::from_str(raw.lines().last().unwrap()).unwrap();
+    let archived: serde_json::Value = serde_json::from_str(&raw).unwrap();
     assert_eq!(archived["id"].as_str().unwrap(), child);
     let tags: Vec<&str> = archived["tags"].as_array().unwrap().iter()
         .map(|t| t.as_str().unwrap()).collect();
@@ -2407,12 +2559,14 @@ fn tag_sorted_on_node() {
 
 #[test]
 fn tag_serde_compat_no_tags_field() {
-    // Existing graph.json without tags field should still load (serde default)
+    // Legacy graph.json without tags field should migrate and load (serde default)
     let dir = TempDir::new().unwrap();
-    init(&dir);
+    let root = dir.path().join(".complex");
+    std::fs::create_dir_all(root.join("issues")).unwrap();
+    std::fs::create_dir_all(root.join("archive")).unwrap();
+    std::fs::create_dir_all(root.join("events")).unwrap();
 
-    // Write a graph.json manually without the tags field
-    let graph_path = dir.path().join(".complex/graph.json");
+    // Write a legacy graph.json WITHOUT nodes/ dir
     let graph = r#"{
         "version": 1,
         "nodes": [{
@@ -2425,9 +2579,9 @@ fn tag_serde_compat_no_tags_field() {
         }],
         "edges": []
     }"#;
-    std::fs::write(&graph_path, graph).unwrap();
+    std::fs::write(root.join("graph.json"), graph).unwrap();
 
-    // Should load fine and show empty tags
+    // Should migrate and load fine with empty tags
     let out = cx(&dir).args(["--json", "show", "ABCD"]).output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -2948,7 +3102,7 @@ fn rm_scrubs_archived_edges() {
     surface_id(&dir, &b);
     block(&dir, &a, &b);
 
-    // Archive A (edge A→B goes to edges.jsonl)
+    // Archive A (edge A→B becomes dormant in A's archived node file)
     claim(&dir, &a, "t");
     integrate(&dir, &a);
     archive(&dir, &a);

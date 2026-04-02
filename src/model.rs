@@ -69,10 +69,16 @@ pub struct Node {
     /// Tags for categorization and filtering. Propagated to children at read time.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    /// Explicit parent node ID. `None` = root node.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
     /// Arbitrary JSON for orchestrators, agents, and workflow engines.
     /// complex stores it and ignores it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meta: Option<serde_json::Value>,
+    /// Outgoing edges stored in per-node files. Expanded into Graph.edges on load.
+    #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "edges")]
+    pub outgoing_edges: Vec<OutgoingEdge>,
     #[serde(skip)]
     pub body: Option<String>,
     #[serde(skip)]
@@ -90,9 +96,11 @@ impl Node {
             part: None,
             filed_by: None,
             tags: vec![],
+            parent: None,
             created_at: now,
             updated_at: now,
             meta: None,
+            outgoing_edges: vec![],
             body: None,
             comments: vec![],
         }
@@ -101,6 +109,14 @@ impl Node {
     pub fn touch(&mut self) {
         self.updated_at = Utc::now();
     }
+}
+
+/// Outgoing edge stored in a per-node file. `from` is implicit (the node's own ID).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutgoingEdge {
+    pub to: String,
+    #[serde(rename = "type")]
+    pub edge_type: EdgeType,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,16 +155,61 @@ impl Graph {
 
     /// Direct children of a node (one level deep only).
     pub fn children(&self, parent_id: &str) -> Vec<&Node> {
-        let prefix = format!("{}.", parent_id);
         self.nodes
             .iter()
-            .filter(|n| n.id.starts_with(&prefix) && !n.id[prefix.len()..].contains('.'))
+            .filter(|n| n.parent.as_deref() == Some(parent_id))
             .collect()
     }
 
-    /// All root nodes (no dot in id).
+    /// All root nodes (no parent).
     pub fn roots(&self) -> Vec<&Node> {
-        self.nodes.iter().filter(|n| !n.id.contains('.')).collect()
+        self.nodes.iter().filter(|n| n.parent.is_none()).collect()
+    }
+
+    /// All ancestor IDs from immediate parent up to root.
+    pub fn ancestors(&self, id: &str) -> Vec<String> {
+        let mut result = vec![];
+        let mut cur = id;
+        while let Some(node) = self.get_node(cur) {
+            if let Some(p) = &node.parent {
+                result.push(p.clone());
+                cur = p;
+            } else {
+                break;
+            }
+        }
+        result
+    }
+
+    /// All transitive descendants (BFS).
+    #[allow(dead_code)]
+    pub fn descendants(&self, id: &str) -> Vec<&Node> {
+        let mut result = vec![];
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back(id.to_string());
+        while let Some(cur) = queue.pop_front() {
+            for child in self.children(&cur) {
+                result.push(child);
+                queue.push_back(child.id.clone());
+            }
+        }
+        result
+    }
+
+    /// Returns true if `candidate` is a descendant of `ancestor`.
+    pub fn is_descendant_of(&self, candidate: &str, ancestor: &str) -> bool {
+        let mut cur = candidate;
+        while let Some(node) = self.get_node(cur) {
+            if let Some(p) = &node.parent {
+                if p == ancestor {
+                    return true;
+                }
+                cur = p;
+            } else {
+                break;
+            }
+        }
+        false
     }
 
     /// Returns IDs of latent nodes that have no non-integrated blockers.
@@ -173,15 +234,11 @@ impl Graph {
     /// Compute effective tags for a node: own tags + all ancestor tags (deduplicated).
     pub fn effective_tags(&self, id: &str) -> Vec<String> {
         let mut tags = std::collections::BTreeSet::new();
-        // Collect own tags
         if let Some(node) = self.get_node(id) {
             tags.extend(node.tags.iter().cloned());
         }
-        // Walk up ancestor chain via the hierarchical ID
-        let mut cur = id.to_string();
-        while let Some(dot) = cur.rfind('.') {
-            cur = cur[..dot].to_string();
-            if let Some(ancestor) = self.get_node(&cur) {
+        for ancestor_id in self.ancestors(id) {
+            if let Some(ancestor) = self.get_node(&ancestor_id) {
                 tags.extend(ancestor.tags.iter().cloned());
             }
         }

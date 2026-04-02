@@ -14,6 +14,7 @@ pub fn materialize(graph: &Graph) -> Result<Connection> {
             shadowed   INTEGER NOT NULL DEFAULT 0,
             part       TEXT,
             filed_by   TEXT,
+            parent     TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -27,7 +28,7 @@ pub fn materialize(graph: &Graph) -> Result<Connection> {
 
     for n in &graph.nodes {
         conn.execute(
-            "INSERT INTO nodes VALUES (?,?,?,?,?,?,?,?)",
+            "INSERT INTO nodes VALUES (?,?,?,?,?,?,?,?,?)",
             params![
                 n.id,
                 n.title,
@@ -35,6 +36,7 @@ pub fn materialize(graph: &Graph) -> Result<Connection> {
                 n.shadowed as i32,
                 n.part,
                 n.filed_by,
+                n.parent,
                 n.created_at.to_rfc3339(),
                 n.updated_at.to_rfc3339(),
             ],
@@ -60,15 +62,25 @@ pub struct ReadyNode {
 /// Nodes that are ready and have no unresolved blocking dependencies.
 pub fn ready_nodes(conn: &Connection) -> Result<Vec<ReadyNode>> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, part FROM nodes
+        "WITH RECURSIVE self_and_ancestors(node_id, ancestor_id) AS (
+             -- Every node is its own ancestor (for self-blocking)
+             SELECT id, id FROM nodes
+             UNION ALL
+             -- Walk up the parent chain
+             SELECT sa.node_id, n.parent
+               FROM self_and_ancestors sa
+               JOIN nodes n ON n.id = sa.ancestor_id
+              WHERE n.parent IS NOT NULL
+         )
+         SELECT id, title, part FROM nodes
          WHERE state = 'ready'
            AND shadowed = 0
            AND NOT EXISTS (
                SELECT 1 FROM edges e
                JOIN nodes b ON e.from_id = b.id
-               JOIN nodes ancestor ON e.to_id = ancestor.id
-               WHERE (nodes.id = ancestor.id OR nodes.id LIKE ancestor.id || '.%')
-                 AND e.type = 'blocks'
+               JOIN self_and_ancestors sa ON sa.node_id = nodes.id
+                                         AND sa.ancestor_id = e.to_id
+               WHERE e.type = 'blocks'
                  AND b.state != 'integrated'
            )
          ORDER BY updated_at ASC",

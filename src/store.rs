@@ -3,33 +3,28 @@ use std::io::Write as IoWrite;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
-use chrono::Utc;
 use fs2::FileExt;
 
-use crate::model::{Graph, Node};
+use crate::model::{Edge, Graph, Node, OutgoingEdge};
 
 const COMPLEX_DIR: &str = ".complex";
 const GRAPH_FILE: &str = "graph.json";
+const NODES_DIR: &str = "nodes";
 const ISSUES_DIR: &str = "issues";
 const ARCHIVE_DIR: &str = "archive";
-const ARCHIVE_JSONL: &str = "archive.jsonl";
 const EVENTS_JSONL: &str = "events.jsonl";
 const EVENTS_DIR: &str = "events";
 
-/// Lines before rotating the active archive file.
-const ARCHIVE_ROTATE_LINES: usize = 200;
-/// Lines before rotating the active events file.
-const EVENTS_ROTATE_LINES: usize = 1000;
 
 // ── project location ──────────────────────────────────────────────────────────
 
 pub fn find_root() -> Result<PathBuf> {
     if let Ok(cx_dir) = std::env::var("CX_DIR") {
         let p = PathBuf::from(cx_dir);
-        if p.join(GRAPH_FILE).exists() {
+        if p.join(NODES_DIR).exists() || p.join(GRAPH_FILE).exists() {
             return Ok(p);
         }
-        bail!("CX_DIR is set to {} but no graph.json found there — run cx init", p.display());
+        bail!("CX_DIR is set to {} but no nodes/ or graph.json found there — run cx init", p.display());
     }
     let mut dir = std::env::current_dir()?;
     loop {
@@ -51,22 +46,97 @@ pub fn init(cwd: &Path) -> Result<PathBuf> {
     if root.exists() {
         bail!("{} already exists", root.display());
     }
+    fs::create_dir_all(root.join(NODES_DIR))?;
     fs::create_dir_all(root.join(ISSUES_DIR))?;
     fs::create_dir_all(root.join(ARCHIVE_DIR))?;
     fs::create_dir_all(root.join(EVENTS_DIR))?;
-    let json = serde_json::to_string_pretty(&Graph::default())?;
-    fs::write(root.join(GRAPH_FILE), json)?;
     Ok(root)
 }
 
 // ── graph load / save ─────────────────────────────────────────────────────────
 
 pub fn load(root: &Path) -> Result<Graph> {
+    let nodes_dir = root.join(NODES_DIR);
+    let graph_path = root.join(GRAPH_FILE);
+
+    if nodes_dir.exists() {
+        load_per_node(root)
+    } else if graph_path.exists() {
+        // Legacy: migrate from graph.json
+        let mut graph = load_legacy(root)?;
+        fs::create_dir_all(&nodes_dir)?;
+        save(root, &graph)?;
+        // Back up the old graph.json
+        fs::rename(&graph_path, root.join("graph.json.bak"))?;
+        // Reload body/comments (save doesn't persist those from the in-memory graph)
+        load_bodies_and_comments(root, &mut graph)?;
+        Ok(graph)
+    } else {
+        bail!("no nodes/ or graph.json found in {}", root.display());
+    }
+}
+
+fn load_legacy(root: &Path) -> Result<Graph> {
     let path = root.join(GRAPH_FILE);
     let json = fs::read_to_string(&path)
         .with_context(|| format!("reading {}", path.display()))?;
     let mut graph: Graph = serde_json::from_str(&json)?;
 
+    // Populate parent field from dot-separated ID if not already set
+    for node in &mut graph.nodes {
+        if node.parent.is_none()
+            && let Some(dot) = node.id.rfind('.')
+        {
+            node.parent = Some(node.id[..dot].to_string());
+        }
+    }
+
+    load_bodies_and_comments(root, &mut graph)?;
+    Ok(graph)
+}
+
+fn load_per_node(root: &Path) -> Result<Graph> {
+    let nodes_dir = root.join(NODES_DIR);
+    let mut nodes = Vec::new();
+    let mut edges = Vec::new();
+
+    for entry in fs::read_dir(&nodes_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let json = fs::read_to_string(&path)
+            .with_context(|| format!("reading {}", path.display()))?;
+        let node: Node = serde_json::from_str(&json)
+            .with_context(|| format!("parsing {}", path.display()))?;
+        // Expand outgoing edges into graph-level edges
+        for oe in &node.outgoing_edges {
+            edges.push(Edge {
+                from: node.id.clone(),
+                to: oe.to.clone(),
+                edge_type: oe.edge_type.clone(),
+            });
+        }
+        nodes.push(node);
+    }
+
+    // Filter out dormant edges (target not in the loaded graph)
+    let live_ids: std::collections::HashSet<&str> =
+        nodes.iter().map(|n| n.id.as_str()).collect();
+    edges.retain(|e| live_ids.contains(e.to.as_str()));
+
+    let mut graph = Graph {
+        version: 1,
+        nodes,
+        edges,
+    };
+
+    load_bodies_and_comments(root, &mut graph)?;
+    Ok(graph)
+}
+
+fn load_bodies_and_comments(root: &Path, graph: &mut Graph) -> Result<()> {
     let issues = root.join(ISSUES_DIR);
     for node in &mut graph.nodes {
         let md = issues.join(format!("{}.md", node.id));
@@ -78,29 +148,68 @@ pub fn load(root: &Path) -> Result<Graph> {
             node.comments = serde_json::from_str(&fs::read_to_string(&comments_path)?)?;
         }
     }
-
-    Ok(graph)
+    Ok(())
 }
 
 pub fn save(root: &Path, graph: &Graph) -> Result<()> {
-    let lock_path = root.join("graph.lock");
+    let lock_path = root.join("cx.lock");
     let lock_file = File::create(&lock_path)?;
-    lock_file.lock_exclusive().context("acquiring graph.lock")?;
+    lock_file.lock_exclusive().context("acquiring cx.lock")?;
 
-    let graph_path = root.join(GRAPH_FILE);
-    let tmp = root.join("graph.json.tmp");
-    let json = serde_json::to_string_pretty(graph)?;
-    fs::write(&tmp, &json)?;
-    fs::rename(&tmp, &graph_path)?;
+    let nodes_dir = root.join(NODES_DIR);
+    fs::create_dir_all(&nodes_dir)?;
 
+    // Build set of live node IDs
+    let live_ids: std::collections::HashSet<&str> =
+        graph.nodes.iter().map(|n| n.id.as_str()).collect();
+
+    // Write each node file with its outgoing edges
+    for node in &graph.nodes {
+        let outgoing: Vec<OutgoingEdge> = graph
+            .edges
+            .iter()
+            .filter(|e| e.from == node.id)
+            .map(|e| OutgoingEdge {
+                to: e.to.clone(),
+                edge_type: e.edge_type.clone(),
+            })
+            .collect();
+        // Preserve dormant edges (target not live) from the node's loaded outgoing_edges
+        let mut all_outgoing = outgoing;
+        for oe in &node.outgoing_edges {
+            if !live_ids.contains(oe.to.as_str())
+                && !all_outgoing.iter().any(|e| e.to == oe.to && e.edge_type == oe.edge_type)
+            {
+                all_outgoing.push(oe.clone());
+            }
+        }
+        let mut save_node = node.clone();
+        save_node.outgoing_edges = all_outgoing;
+        let json = serde_json::to_string_pretty(&save_node)?;
+        fs::write(nodes_dir.join(format!("{}.json", node.id)), json)?;
+    }
+
+    // Remove node files for nodes no longer in the graph
+    for entry in fs::read_dir(&nodes_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+            && path.extension().and_then(|e| e.to_str()) == Some("json")
+            && !live_ids.contains(stem)
+        {
+            fs::remove_file(&path)?;
+        }
+    }
+
+    // Write body and comment files
     let issues = root.join(ISSUES_DIR);
+    fs::create_dir_all(&issues)?;
     for node in &graph.nodes {
         if let Some(body) = &node.body {
             fs::write(issues.join(format!("{}.md", node.id)), body)?;
         }
         let comments_path = issues.join(format!("{}.comments.json", node.id));
         if node.comments.is_empty() {
-            // Clean up file if all comments removed
             if comments_path.exists() {
                 fs::remove_file(&comments_path)?;
             }
@@ -133,10 +242,11 @@ pub fn read_body(root: &Path, id: &str) -> Result<Option<String>> {
 
 // ── archive ───────────────────────────────────────────────────────────────────
 
-const ARCHIVED_EDGES_JSONL: &str = "edges.jsonl";
+const ARCHIVE_NODES_DIR: &str = "nodes";
 
-/// Append a single node to archive.jsonl, rotating if needed.
-/// Edges referencing this node are moved to archive/edges.jsonl (not dropped).
+/// Archive a node: move its file to archive/nodes/{id}.json.
+/// Outgoing edges travel with the node. Incoming edges from other nodes
+/// stay dormant in those nodes' files (filtered out on load).
 pub fn archive_node(root: &Path, graph: &mut Graph, id: &str) -> Result<()> {
     let pos = graph
         .nodes
@@ -144,6 +254,34 @@ pub fn archive_node(root: &Path, graph: &mut Graph, id: &str) -> Result<()> {
         .position(|n| n.id == id)
         .with_context(|| format!("node '{}' not found", id))?;
     let node = graph.nodes.remove(pos);
+
+    // Collect this node's outgoing edges before removing them from graph
+    let (outgoing, keep): (Vec<_>, Vec<_>) =
+        graph.edges.drain(..).partition(|e| e.from == id);
+    // Also remove incoming edges (from other nodes to this one) from graph.edges
+    let (_, keep): (Vec<_>, Vec<_>) =
+        keep.into_iter().partition(|e| e.to == id);
+    graph.edges = keep;
+
+    // Write archived node file with its outgoing edges
+    let archive_nodes = root.join(ARCHIVE_DIR).join(ARCHIVE_NODES_DIR);
+    fs::create_dir_all(&archive_nodes)?;
+    let mut save_node = node;
+    save_node.outgoing_edges = outgoing
+        .into_iter()
+        .map(|e| OutgoingEdge {
+            to: e.to,
+            edge_type: e.edge_type,
+        })
+        .collect();
+    let json = serde_json::to_string_pretty(&save_node)?;
+    fs::write(archive_nodes.join(format!("{}.json", id)), json)?;
+
+    // Remove live node file (save() would also clean it up, but be explicit)
+    let live_path = root.join(NODES_DIR).join(format!("{}.json", id));
+    if live_path.exists() {
+        fs::remove_file(&live_path)?;
+    }
 
     // Move markdown body to archive dir
     let src = root.join(ISSUES_DIR).join(format!("{}.md", id));
@@ -159,34 +297,61 @@ pub fn archive_node(root: &Path, graph: &mut Graph, id: &str) -> Result<()> {
         fs::rename(csrc, cdst)?;
     }
 
-    // Append node as a single JSONL line, rotating first if needed
-    let archive_path = root.join(ARCHIVE_DIR).join(ARCHIVE_JSONL);
-    maybe_rotate(&archive_path, &root.join(ARCHIVE_DIR), ARCHIVE_ROTATE_LINES)?;
-
-    let line = serde_json::to_string(&node)?;
-    append_line(&archive_path, &line)?;
-
-    // Move edges referencing this node to archive/edges.jsonl
-    let edges_path = root.join(ARCHIVE_DIR).join(ARCHIVED_EDGES_JSONL);
-    let (to_archive, to_keep): (Vec<_>, Vec<_>) =
-        graph.edges.drain(..).partition(|e| e.from == id || e.to == id);
-    for edge in &to_archive {
-        let edge_line = serde_json::to_string(edge)?;
-        append_line(&edges_path, &edge_line)?;
-    }
-    graph.edges = to_keep;
-
     Ok(())
 }
 
 /// Restore a node from the archive back into the graph (as integrated).
-/// Edges from archive/edges.jsonl are restored if both endpoints are now live.
+/// Dormant edges from other live nodes auto-reconnect on next load.
 pub fn unarchive_node(root: &Path, graph: &mut Graph, id: &str) -> Result<()> {
     let archive_dir = root.join(ARCHIVE_DIR);
 
-    // Find and remove node from archive JSONL files
-    let node = remove_from_archive_jsonl(&archive_dir, id)?
+    // Try per-node archive file first, fall back to legacy JSONL
+    let node = remove_from_archive_nodes(&archive_dir, id)?
+        .or_else(|| remove_from_archive_jsonl(&archive_dir, id).ok().flatten())
         .with_context(|| format!("node '{}' not found in archive", id))?;
+
+    // Restore outgoing edges into the graph
+    let live_ids: std::collections::HashSet<&str> =
+        graph.nodes.iter().map(|n| n.id.as_str()).collect();
+    for oe in &node.outgoing_edges {
+        // Only restore edges where target is live (or is this node itself)
+        if live_ids.contains(oe.to.as_str()) || oe.to == id {
+            graph.edges.push(Edge {
+                from: id.to_string(),
+                to: oe.to.clone(),
+                edge_type: oe.edge_type.clone(),
+            });
+        }
+    }
+
+    // Restore dormant edges from live nodes that point to this node
+    for live_node_path in fs::read_dir(root.join(NODES_DIR))? {
+        let live_node_path = live_node_path?.path();
+        if live_node_path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let raw = fs::read_to_string(&live_node_path)?;
+        let v: serde_json::Value = serde_json::from_str(&raw)?;
+        let from_id = v["id"].as_str().unwrap_or_default();
+        if let Some(edges) = v["edges"].as_array() {
+            for e in edges {
+                if e["to"].as_str() == Some(id) {
+                    let edge_type: crate::model::EdgeType =
+                        serde_json::from_value(e["type"].clone())?;
+                    // Only add if not already in graph.edges
+                    if !graph.edges.iter().any(|ge|
+                        ge.from == from_id && ge.to == id && ge.edge_type == edge_type
+                    ) {
+                        graph.edges.push(Edge {
+                            from: from_id.to_string(),
+                            to: id.to_string(),
+                            edge_type,
+                        });
+                    }
+                }
+            }
+        }
+    }
 
     // Move body back to issues/
     let src = archive_dir.join(format!("{}.md", id));
@@ -202,44 +367,145 @@ pub fn unarchive_node(root: &Path, graph: &mut Graph, id: &str) -> Result<()> {
         fs::rename(csrc, cdst)?;
     }
 
-    // Insert node back into graph
     graph.nodes.push(node);
-
-    // Restore edges from edges.jsonl where both endpoints are now in the graph
-    restore_archived_edges(root, graph)?;
 
     Ok(())
 }
 
-/// Scan archive/edges.jsonl: restore edges where both endpoints exist in the
-/// graph, leave the rest.
-fn restore_archived_edges(root: &Path, graph: &mut Graph) -> Result<()> {
-    let edges_path = root.join(ARCHIVE_DIR).join(ARCHIVED_EDGES_JSONL);
-    if !edges_path.exists() {
+/// Remove a node from archive/nodes/{id}.json, returning it.
+fn remove_from_archive_nodes(archive_dir: &Path, id: &str) -> Result<Option<Node>> {
+    let path = archive_dir.join(ARCHIVE_NODES_DIR).join(format!("{}.json", id));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let json = fs::read_to_string(&path)?;
+    let node: Node = serde_json::from_str(&json)?;
+    fs::remove_file(&path)?;
+    Ok(Some(node))
+}
+
+/// Remove any edges pointing to the given node from all node files (live + archived).
+/// Called by cx rm to prevent orphaned edges.
+pub fn scrub_archived_edges(root: &Path, id: &str) -> Result<()> {
+    // Scrub from live node files
+    scrub_edges_in_dir(&root.join(NODES_DIR), id)?;
+    // Scrub from archived node files
+    scrub_edges_in_dir(&root.join(ARCHIVE_DIR).join(ARCHIVE_NODES_DIR), id)?;
+    Ok(())
+}
+
+/// Remove edges pointing to `id` from all node JSON files in `dir`.
+fn scrub_edges_in_dir(dir: &Path, id: &str) -> Result<()> {
+    if !dir.exists() {
         return Ok(());
     }
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let raw = fs::read_to_string(&path)?;
+        let mut v: serde_json::Value = serde_json::from_str(&raw)?;
+        if let Some(edges) = v["edges"].as_array() {
+            let filtered: Vec<_> = edges.iter()
+                .filter(|e| e["to"].as_str() != Some(id))
+                .cloned()
+                .collect();
+            if filtered.len() != edges.len() {
+                v["edges"] = serde_json::Value::Array(filtered);
+                fs::write(&path, serde_json::to_string_pretty(&v)?)?;
+            }
+        }
+    }
+    Ok(())
+}
 
-    let content = fs::read_to_string(&edges_path)?;
-    let mut keep = Vec::new();
-    for line in content.lines().filter(|l| !l.trim().is_empty()) {
-        let edge: crate::model::Edge = serde_json::from_str(line)?;
-        if graph.get_node(&edge.from).is_some() && graph.get_node(&edge.to).is_some() {
-            graph.edges.push(edge);
-        } else {
-            keep.push(line.to_string());
+/// Migrate a legacy archive.json or archive.jsonl to per-node archive files.
+pub fn migrate_archive_if_needed(root: &Path) -> Result<()> {
+    // Migrate archive.json → per-node files
+    let legacy_json = root.join(ARCHIVE_DIR).join("archive.json");
+    if legacy_json.exists() {
+        let raw = fs::read_to_string(&legacy_json)?;
+        let nodes: Vec<Node> = serde_json::from_str(&raw).unwrap_or_default();
+        let archive_nodes = root.join(ARCHIVE_DIR).join(ARCHIVE_NODES_DIR);
+        fs::create_dir_all(&archive_nodes)?;
+        for node in &nodes {
+            let json = serde_json::to_string_pretty(node)?;
+            fs::write(archive_nodes.join(format!("{}.json", node.id)), json)?;
+        }
+        fs::remove_file(&legacy_json)?;
+    }
+
+    // Migrate archive.jsonl → per-node files
+    let archive_dir = root.join(ARCHIVE_DIR);
+    if archive_dir.exists() {
+        let archive_nodes = archive_dir.join(ARCHIVE_NODES_DIR);
+        for entry in fs::read_dir(&archive_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let content = fs::read_to_string(&path)?;
+            let mut migrated_any = false;
+            for line in content.lines().filter(|l| !l.trim().is_empty()) {
+                if let Ok(node) = serde_json::from_str::<Node>(line) {
+                    fs::create_dir_all(&archive_nodes)?;
+                    let json = serde_json::to_string_pretty(&node)?;
+                    fs::write(archive_nodes.join(format!("{}.json", node.id)), json)?;
+                    migrated_any = true;
+                }
+            }
+            if migrated_any {
+                fs::remove_file(&path)?;
+            }
         }
     }
 
-    if keep.is_empty() {
+    // Migrate edges.jsonl → absorb into source node files, then delete
+    let edges_path = root.join(ARCHIVE_DIR).join("edges.jsonl");
+    if edges_path.exists() {
+        let content = fs::read_to_string(&edges_path)?;
+        let nodes_dir = root.join(NODES_DIR);
+        let archive_nodes = root.join(ARCHIVE_DIR).join(ARCHIVE_NODES_DIR);
+        for line in content.lines().filter(|l| !l.trim().is_empty()) {
+            let edge: serde_json::Value = serde_json::from_str(line)?;
+            let from = edge["from"].as_str().unwrap_or_default();
+            let to = edge["to"].as_str().unwrap_or_default();
+            let etype = &edge["type"];
+            // Find the source node file (live or archived)
+            let node_path = [
+                nodes_dir.join(format!("{}.json", from)),
+                archive_nodes.join(format!("{}.json", from)),
+            ]
+            .into_iter()
+            .find(|p| p.exists());
+            if let Some(path) = node_path {
+                let raw = fs::read_to_string(&path)?;
+                let mut v: serde_json::Value = serde_json::from_str(&raw)?;
+                let edges = v.get_mut("edges")
+                    .and_then(|e| e.as_array_mut());
+                let new_edge = serde_json::json!({"to": to, "type": etype});
+                if let Some(arr) = edges {
+                    if !arr.iter().any(|e| e["to"].as_str() == Some(to) && e["type"] == *etype) {
+                        arr.push(new_edge);
+                        fs::write(&path, serde_json::to_string_pretty(&v)?)?;
+                    }
+                } else {
+                    v["edges"] = serde_json::json!([new_edge]);
+                    fs::write(&path, serde_json::to_string_pretty(&v)?)?;
+                }
+            }
+            // If no node file found, edge is orphaned — drop it
+        }
         fs::remove_file(&edges_path)?;
-    } else {
-        fs::write(&edges_path, keep.join("\n") + "\n")?;
     }
 
     Ok(())
 }
 
-/// Find a node by ID in all archive JSONL files, remove its line, return the node.
+/// Find a node by ID in legacy archive JSONL files, remove its line, return the node.
 fn remove_from_archive_jsonl(archive_dir: &Path, id: &str) -> Result<Option<Node>> {
     if !archive_dir.exists() {
         return Ok(None);
@@ -247,11 +513,7 @@ fn remove_from_archive_jsonl(archive_dir: &Path, id: &str) -> Result<Option<Node
     for entry in fs::read_dir(archive_dir)? {
         let entry = entry?;
         let path = entry.path();
-        // Only look at JSONL files, skip edges.jsonl
         if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
-            continue;
-        }
-        if path.file_name().and_then(|n| n.to_str()) == Some(ARCHIVED_EDGES_JSONL) {
             continue;
         }
         let content = fs::read_to_string(&path)?;
@@ -279,58 +541,6 @@ fn remove_from_archive_jsonl(archive_dir: &Path, id: &str) -> Result<Option<Node
     Ok(None)
 }
 
-/// Remove any archived edges that reference the given node ID.
-/// Called by cx rm to prevent orphaned edges in the archive pool.
-pub fn scrub_archived_edges(root: &Path, id: &str) -> Result<()> {
-    let edges_path = root.join(ARCHIVE_DIR).join(ARCHIVED_EDGES_JSONL);
-    if !edges_path.exists() {
-        return Ok(());
-    }
-
-    let content = fs::read_to_string(&edges_path)?;
-    let keep: Vec<&str> = content
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .filter(|l| {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(l) {
-                v["from"].as_str() != Some(id) && v["to"].as_str() != Some(id)
-            } else {
-                true
-            }
-        })
-        .collect();
-
-    if keep.is_empty() {
-        fs::remove_file(&edges_path)?;
-    } else {
-        fs::write(&edges_path, keep.join("\n") + "\n")?;
-    }
-
-    Ok(())
-}
-
-/// Migrate a legacy archive.json to archive.jsonl in place.
-/// Called transparently on first archive write.
-pub fn migrate_archive_if_needed(root: &Path) -> Result<()> {
-    let legacy = root.join(ARCHIVE_DIR).join("archive.json");
-    if !legacy.exists() {
-        return Ok(());
-    }
-    let raw = fs::read_to_string(&legacy)?;
-    let nodes: Vec<Node> = serde_json::from_str(&raw).unwrap_or_default();
-    if nodes.is_empty() {
-        fs::remove_file(&legacy)?;
-        return Ok(());
-    }
-    let dest = root.join(ARCHIVE_DIR).join(ARCHIVE_JSONL);
-    let mut file = OpenOptions::new().create(true).append(true).open(&dest)?;
-    for node in &nodes {
-        writeln!(file, "{}", serde_json::to_string(node)?)?;
-    }
-    fs::remove_file(legacy)?;
-    Ok(())
-}
-
 // ── events ────────────────────────────────────────────────────────────────────
 
 #[derive(serde::Serialize)]
@@ -347,48 +557,99 @@ pub struct Event<'a> {
 }
 
 pub fn append_event(root: &Path, event: Event<'_>) -> Result<()> {
-    fs::create_dir_all(root.join(EVENTS_DIR))?;
-    let events_path = root.join(EVENTS_JSONL);
-    maybe_rotate(&events_path, &root.join(EVENTS_DIR), EVENTS_ROTATE_LINES)?;
+    let events_dir = root.join(EVENTS_DIR);
+    fs::create_dir_all(&events_dir)?;
+
+    // Also append to legacy events.jsonl for backward compat during transition
+    let legacy_path = root.join(EVENTS_JSONL);
     let line = serde_json::to_string(&event)?;
-    append_line(&events_path, &line)?;
+    append_line(&legacy_path, &line)?;
+
+    // Write to per-invocation file: events/{timestamp}.jsonl
+    // Use the event timestamp (YYYY-MM-DDTHH:MM:SS) as the filename base
+    let ts_safe = event.ts.replace(':', "-");
+    let filename = format!("{}.jsonl", ts_safe);
+    let event_path = events_dir.join(&filename);
+    append_line(&event_path, &line)?;
+
     Ok(())
 }
 
-/// Read the current events.jsonl (most recent N lines).
+/// Read the most recent N events from all event sources.
 pub fn recent_events(root: &Path, limit: usize) -> Result<Vec<serde_json::Value>> {
-    let path = root.join(EVENTS_JSONL);
-    if !path.exists() {
-        return Ok(vec![]);
+    let mut all: Vec<serde_json::Value> = Vec::new();
+
+    // Read from legacy events.jsonl
+    let legacy = root.join(EVENTS_JSONL);
+    if legacy.exists() {
+        let raw = fs::read_to_string(&legacy)?;
+        for line in raw.lines().filter(|l| !l.trim().is_empty()) {
+            if let Ok(v) = serde_json::from_str(line) {
+                all.push(v);
+            }
+        }
     }
-    let raw = fs::read_to_string(&path)?;
-    let all: Vec<serde_json::Value> = raw
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .filter_map(|l| serde_json::from_str(l).ok())
-        .collect();
+
+    // Read from events/*.jsonl files
+    let events_dir = root.join(EVENTS_DIR);
+    if events_dir.exists() {
+        let mut files: Vec<_> = fs::read_dir(&events_dir)?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
+            .map(|e| e.path())
+            .collect();
+        files.sort();
+        for path in files {
+            let raw = fs::read_to_string(&path)?;
+            for line in raw.lines().filter(|l| !l.trim().is_empty()) {
+                if let Ok(v) = serde_json::from_str(line) {
+                    all.push(v);
+                }
+            }
+        }
+    }
+
+    // Deduplicate by (ts, action, node_id) and take most recent N
+    all.dedup_by(|a, b| {
+        a["ts"] == b["ts"] && a["action"] == b["action"] && a["node_id"] == b["node_id"]
+    });
     let skip = all.len().saturating_sub(limit);
     Ok(all.into_iter().skip(skip).collect())
 }
 
 
-/// Collect all IDs from archived nodes (active + rotated JSONL files).
+/// Collect all IDs from archived nodes.
 pub fn load_archived_ids(root: &Path) -> Result<std::collections::HashSet<String>> {
-    let archive_dir = root.join(ARCHIVE_DIR);
     let mut ids = std::collections::HashSet::new();
-    if !archive_dir.exists() {
-        return Ok(ids);
+
+    // Per-node archive files
+    let archive_nodes = root.join(ARCHIVE_DIR).join(ARCHIVE_NODES_DIR);
+    if archive_nodes.exists() {
+        for entry in fs::read_dir(&archive_nodes)? {
+            let entry = entry?;
+            let path = entry.path();
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                && path.extension().and_then(|e| e.to_str()) == Some("json")
+            {
+                ids.insert(stem.to_string());
+            }
+        }
     }
-    for entry in fs::read_dir(&archive_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-            let content = fs::read_to_string(&path)?;
-            for line in content.lines() {
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(line)
-                    && let Some(id) = v["id"].as_str()
-                {
-                    ids.insert(id.to_string());
+
+    // Legacy: scan JSONL files for any remaining archived nodes
+    let archive_dir = root.join(ARCHIVE_DIR);
+    if archive_dir.exists() {
+        for entry in fs::read_dir(&archive_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                let content = fs::read_to_string(&path)?;
+                for line in content.lines() {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(line)
+                        && let Some(id) = v["id"].as_str()
+                    {
+                        ids.insert(id.to_string());
+                    }
                 }
             }
         }
@@ -416,60 +677,6 @@ pub fn find_orphan_bodies(root: &Path, graph: &Graph) -> Result<Vec<String>> {
     }
     orphans.sort();
     Ok(orphans)
-}
-
-// ── rotation ──────────────────────────────────────────────────────────────────
-
-/// Rotate `active` into `archive_dir/YYYY-MM[-N].jsonl` if it exceeds
-/// `max_lines` or the first entry is from a previous calendar month.
-fn maybe_rotate(active: &Path, archive_dir: &Path, max_lines: usize) -> Result<()> {
-    if !active.exists() {
-        return Ok(());
-    }
-    let content = fs::read_to_string(active)?;
-    let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
-
-    if lines.is_empty() {
-        return Ok(());
-    }
-
-    let now = Utc::now();
-    let current_month = now.format("%Y-%m").to_string();
-
-    let first_month = lines
-        .first()
-        .and_then(|l| serde_json::from_str::<serde_json::Value>(l).ok())
-        .and_then(|v| v["ts"].as_str().map(|s| s[..7].to_string()));
-
-    let needs_rotation = lines.len() >= max_lines
-        || first_month.as_deref().map(|m| m != current_month).unwrap_or(false);
-
-    if !needs_rotation {
-        return Ok(());
-    }
-
-    let month_label = first_month.as_deref().unwrap_or(&current_month);
-    let dest = unique_archive_path(archive_dir, month_label);
-    fs::rename(active, dest)?;
-
-    Ok(())
-}
-
-/// Returns a non-colliding path like `archive_dir/2026-02.jsonl`,
-/// falling back to `2026-02-2.jsonl`, `2026-02-3.jsonl` etc.
-fn unique_archive_path(dir: &Path, month: &str) -> PathBuf {
-    let base = dir.join(format!("{}.jsonl", month));
-    if !base.exists() {
-        return base;
-    }
-    let mut n = 2usize;
-    loop {
-        let p = dir.join(format!("{}-{}.jsonl", month, n));
-        if !p.exists() {
-            return p;
-        }
-        n += 1;
-    }
 }
 
 fn append_line(path: &Path, line: &str) -> Result<()> {
