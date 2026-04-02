@@ -1,0 +1,19 @@
+{
+  "id": "GZ1W.gE7n",
+  "title": "store: unarchive_node — restore node + edges from archive",
+  "state": "integrated",
+  "shadowed": false,
+  "part": null,
+  "created_at": "2026-03-29T16:47:52.769004842Z",
+  "updated_at": "2026-03-29T17:34:29.816066195Z",
+  "parent": "GZ1W",
+  "meta": {
+    "_reason": "unarchive_node restores node + edges from archive"
+  },
+  "edges": [
+    {
+      "to": "GZ1W.1CsZ",
+      "type": "blocks"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "6lgG",
+  "title": "cx move: reparent a node under a new parent",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-03-08T23:26:38.257499505Z",
+  "updated_at": "2026-03-08T23:33:20.505614970Z",
+  "meta": {
+    "_reason": "cx move/mv command with tests"
+  }
+}

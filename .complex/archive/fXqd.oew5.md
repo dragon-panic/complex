@@ -1,0 +1,4 @@
+- append_event(): write to events/{timestamp}_{random}.jsonl per invocation
+- recent_events(): glob events/*.jsonl, sort, read last N
+- Remove events.jsonl rotation logic
+- Clean up: remove GRAPH_FILE constant, dot-ID display code, update AGENT_GUIDE

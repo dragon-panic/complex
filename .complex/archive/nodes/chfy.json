@@ -1,0 +1,12 @@
+{
+  "id": "chfy",
+  "title": "cx status command — combined tree + surface output",
+  "state": "integrated",
+  "shadowed": false,
+  "part": null,
+  "created_at": "2026-03-08T00:07:28.801412028Z",
+  "updated_at": "2026-03-08T00:16:04.318593259Z",
+  "meta": {
+    "_reason": "cx status command implemented, tests pass, docs updated"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "id": "KfdK.8iso",
+  "title": "Denormalize effective tags into archive on integrate",
+  "state": "integrated",
+  "shadowed": false,
+  "part": null,
+  "created_at": "2026-03-11T17:32:35.513777181Z",
+  "updated_at": "2026-03-11T17:42:08.444856747Z",
+  "meta": {
+    "_reason": "effective tags baked into archived node on integrate"
+  }
+}

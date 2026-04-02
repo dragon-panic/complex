@@ -1,0 +1,12 @@
+{
+  "id": "KfdK.CuVI",
+  "title": "Add --tag filter to list, find, tree",
+  "state": "integrated",
+  "shadowed": false,
+  "part": null,
+  "created_at": "2026-03-11T17:32:35.512183129Z",
+  "updated_at": "2026-03-11T17:42:08.443340152Z",
+  "meta": {
+    "_reason": "list/find/tree all accept --tag filter"
+  }
+}

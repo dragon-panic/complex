@@ -1,0 +1,12 @@
+{
+  "id": "AY37",
+  "title": "Block edges don't propagate to children of blocked parent",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-03-08T23:05:11.485686890Z",
+  "updated_at": "2026-03-08T23:09:45.629450447Z",
+  "meta": {
+    "_reason": "block edges now propagate to children — fixed in db::ready_nodes SQL and cmd_claim"
+  }
+}

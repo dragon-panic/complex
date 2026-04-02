@@ -1,0 +1,23 @@
+{
+  "id": "GZ1W.c6XZ",
+  "title": "store: archive edges to edges.jsonl instead of dropping",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-03-29T16:47:52.766729194Z",
+  "updated_at": "2026-03-29T17:34:29.814321055Z",
+  "parent": "GZ1W",
+  "meta": {
+    "_reason": "archive_node now moves edges to edges.jsonl instead of dropping"
+  },
+  "edges": [
+    {
+      "to": "GZ1W.gE7n",
+      "type": "blocks"
+    },
+    {
+      "to": "GZ1W.h2MX",
+      "type": "blocks"
+    }
+  ]
+}

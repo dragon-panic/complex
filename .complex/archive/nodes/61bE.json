@@ -1,0 +1,12 @@
+{
+  "id": "61bE",
+  "title": "cx rm should archive before deleting",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-03-08T00:21:43.350475992Z",
+  "updated_at": "2026-03-08T00:28:52.816694820Z",
+  "meta": {
+    "_reason": "cx rm now archives before deleting — tests pass, clippy clean"
+  }
+}

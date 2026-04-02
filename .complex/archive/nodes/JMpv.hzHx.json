@@ -1,0 +1,9 @@
+{
+  "id": "JMpv.hzHx",
+  "title": "Handle cx new with non-existent parent gracefully",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-03-01T00:09:52.660839101Z",
+  "updated_at": "2026-03-01T15:20:06.839074944Z"
+}

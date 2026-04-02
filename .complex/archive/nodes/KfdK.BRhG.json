@@ -1,0 +1,12 @@
+{
+  "id": "KfdK.BRhG",
+  "title": "Materialize effective tags in SQLite db layer",
+  "state": "integrated",
+  "shadowed": false,
+  "part": null,
+  "created_at": "2026-03-11T17:32:35.510902705Z",
+  "updated_at": "2026-03-11T17:42:08.441867956Z",
+  "meta": {
+    "_reason": "skipped — filtering done in Rust, not SQL materialization"
+  }
+}

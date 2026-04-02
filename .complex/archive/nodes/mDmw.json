@@ -1,0 +1,9 @@
+{
+  "id": "mDmw",
+  "title": "cx claim silently succeeds on nonexistent task IDs",
+  "state": "latent",
+  "shadowed": false,
+  "part": null,
+  "created_at": "2026-03-08T22:40:16.214857768Z",
+  "updated_at": "2026-03-08T22:40:16.214857768Z"
+}

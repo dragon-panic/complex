@@ -1,0 +1,13 @@
+{
+  "id": "GZ1W.h2MX",
+  "title": "store: scrub archived edges on cx rm",
+  "state": "integrated",
+  "shadowed": false,
+  "part": null,
+  "created_at": "2026-03-29T16:47:52.772612693Z",
+  "updated_at": "2026-03-29T17:34:29.819265164Z",
+  "parent": "GZ1W",
+  "meta": {
+    "_reason": "cmd_rm calls scrub_archived_edges"
+  }
+}

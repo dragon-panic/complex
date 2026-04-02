@@ -1,0 +1,19 @@
+{
+  "id": "fXqd.oGoY",
+  "title": "Phase 1: add parent field to Node",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-04-02T02:31:41.231656224Z",
+  "updated_at": "2026-04-02T02:33:13.221261739Z",
+  "parent": "fXqd",
+  "meta": {
+    "_reason": "parent field added, all 164 tests pass"
+  },
+  "edges": [
+    {
+      "to": "fXqd.QiTr",
+      "type": "blocks"
+    }
+  ]
+}

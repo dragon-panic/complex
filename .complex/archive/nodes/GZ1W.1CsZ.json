@@ -1,0 +1,13 @@
+{
+  "id": "GZ1W.1CsZ",
+  "title": "CLI: Unarchive subcommand",
+  "state": "integrated",
+  "shadowed": false,
+  "part": null,
+  "created_at": "2026-03-29T16:47:52.770835457Z",
+  "updated_at": "2026-03-29T17:34:29.817578642Z",
+  "parent": "GZ1W",
+  "meta": {
+    "_reason": "Unarchive subcommand wired up"
+  }
+}

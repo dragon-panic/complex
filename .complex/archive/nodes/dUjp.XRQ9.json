@@ -1,0 +1,19 @@
+{
+  "id": "dUjp.XRQ9",
+  "title": "cli: Comment and Comments subcommands",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-03-29T13:18:48.416538129Z",
+  "updated_at": "2026-03-29T13:23:11.719406745Z",
+  "parent": "dUjp",
+  "meta": {
+    "_reason": "Comment and Comments subcommands added"
+  },
+  "edges": [
+    {
+      "to": "dUjp.MUrF",
+      "type": "blocks"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "esX7",
+  "title": "Agent-friendly body input without cat heredoc",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-03-08T00:32:20.384126713Z",
+  "updated_at": "2026-03-08T00:37:53.086236594Z",
+  "meta": {
+    "_reason": "added --body-file/-F to add and new, updated CLAUDE.md"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "fXqd.KKxP",
+  "title": "Phase 3: flat IDs",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-04-02T02:31:41.235637686Z",
+  "updated_at": "2026-04-02T02:37:15.385558767Z",
+  "parent": "fXqd",
+  "meta": {
+    "_reason": "flat IDs, simplified move, all 164 tests pass"
+  },
+  "edges": [
+    {
+      "to": "fXqd.WArI",
+      "type": "blocks"
+    }
+  ]
+}

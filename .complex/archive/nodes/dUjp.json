@@ -1,0 +1,13 @@
+{
+  "id": "dUjp",
+  "title": "cx comments: append-only comment thread on issues",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-03-29T13:09:42.360642525Z",
+  "updated_at": "2026-03-29T13:25:26.017744461Z",
+  "filed_by": "god",
+  "meta": {
+    "_reason": "comments feature complete — model, store, CLI, show, tests"
+  }
+}

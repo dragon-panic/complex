@@ -1,0 +1,10 @@
+{
+  "id": "NYSO",
+  "title": "test filed_by",
+  "state": "latent",
+  "shadowed": false,
+  "part": null,
+  "created_at": "2026-03-08T17:40:05.846493389Z",
+  "updated_at": "2026-03-08T17:40:05.846493389Z",
+  "filed_by": "ox:seguro"
+}

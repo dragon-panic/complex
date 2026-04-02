@@ -1,0 +1,19 @@
+{
+  "id": "dUjp.npdM",
+  "title": "model: Comment struct + Node.comments field",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-03-29T13:18:48.413794870Z",
+  "updated_at": "2026-03-29T13:21:23.458317333Z",
+  "parent": "dUjp",
+  "meta": {
+    "_reason": "Comment struct + comments field added to model"
+  },
+  "edges": [
+    {
+      "to": "dUjp.WapK",
+      "type": "blocks"
+    }
+  ]
+}

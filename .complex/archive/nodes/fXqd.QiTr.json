@@ -1,0 +1,19 @@
+{
+  "id": "fXqd.QiTr",
+  "title": "Phase 2: switch hierarchy to parent field",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-04-02T02:31:41.233884131Z",
+  "updated_at": "2026-04-02T02:34:48.923930951Z",
+  "parent": "fXqd",
+  "meta": {
+    "_reason": "hierarchy switched to parent field, 164 tests pass"
+  },
+  "edges": [
+    {
+      "to": "fXqd.KKxP",
+      "type": "blocks"
+    }
+  ]
+}

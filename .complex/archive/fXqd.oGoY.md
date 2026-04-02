@@ -1,0 +1,1 @@
+Add `parent: Option<String>` to Node struct. Populate from dot-separated ID on load (migration fixup in store::load). Set parent in cmd_add, cmd_new, cmd_move. All existing tests must pass unchanged — field is serde(default, skip_serializing_if).

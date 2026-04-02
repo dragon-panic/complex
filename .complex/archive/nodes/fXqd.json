@@ -1,0 +1,16 @@
+{
+  "id": "fXqd",
+  "title": "graph.json merge conflicts break parallel branches",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-04-02T02:02:04.082136129Z",
+  "updated_at": "2026-04-02T02:48:29.700402670Z",
+  "filed_by": "ox",
+  "tags": [
+    "bug"
+  ],
+  "meta": {
+    "_reason": "all 6 phases complete — per-node files, flat IDs, parent field, dormant edges, per-invocation events"
+  }
+}

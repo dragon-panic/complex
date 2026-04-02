@@ -1,0 +1,19 @@
+{
+  "id": "fXqd.WArI",
+  "title": "Phase 4: per-node file storage",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-04-02T02:31:41.237349913Z",
+  "updated_at": "2026-04-02T02:42:37.805463216Z",
+  "parent": "fXqd",
+  "meta": {
+    "_reason": "per-node file storage, migration from graph.json, 164 tests pass"
+  },
+  "edges": [
+    {
+      "to": "fXqd.xpZC",
+      "type": "blocks"
+    }
+  ]
+}

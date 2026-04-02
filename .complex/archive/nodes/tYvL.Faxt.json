@@ -1,0 +1,13 @@
+{
+  "id": "tYvL.Faxt",
+  "title": "Delete docs/prd/README.md",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-03-29T20:00:04.746676663Z",
+  "updated_at": "2026-03-29T20:02:34.643055508Z",
+  "parent": "tYvL",
+  "meta": {
+    "_reason": "docs/prd/README.md deleted"
+  }
+}

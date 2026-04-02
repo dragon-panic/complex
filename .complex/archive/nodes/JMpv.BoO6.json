@@ -1,0 +1,12 @@
+{
+  "id": "JMpv.BoO6",
+  "title": "File locking on graph.json writes",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-03-07T19:56:42.104589737Z",
+  "updated_at": "2026-03-07T20:07:45.708485894Z",
+  "meta": {
+    "_reason": "fs2 advisory lock on graph.json during save"
+  }
+}

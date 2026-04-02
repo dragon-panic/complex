@@ -1,0 +1,12 @@
+{
+  "id": "hPKU",
+  "title": "Add filed_by field to track who created a task",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-03-08T17:33:27.423325448Z",
+  "updated_at": "2026-03-08T17:38:23.346246147Z",
+  "meta": {
+    "_reason": "implemented filed_by — all 109 tests pass, clippy clean"
+  }
+}

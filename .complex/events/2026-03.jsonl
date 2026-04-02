@@ -1,0 +1,174 @@
+{"ts":"2026-03-01T16:47:19.709705+00:00","action":"integrate","node_id":"ISqr.G1rZ"}
+{"ts":"2026-03-01T16:47:19.710918098+00:00","action":"integrate","node_id":"ISqr.R6Dc"}
+{"ts":"2026-03-01T16:47:33.888601452+00:00","action":"claim","node_id":"ISqr.x4CO","part":"claude"}
+{"ts":"2026-03-01T16:47:38.047973337+00:00","action":"integrate","node_id":"ISqr.x4CO"}
+{"ts":"2026-03-01T16:49:41.507657097+00:00","action":"claim","node_id":"JMpv.4cmQ","part":"claude"}
+{"ts":"2026-03-01T16:51:15.447044613+00:00","action":"integrate","node_id":"JMpv.4cmQ"}
+{"ts":"2026-03-07T19:51:42.266386386+00:00","action":"create","node_id":"JMpv.vJdi","detail":"test child"}
+{"ts":"2026-03-07T19:51:46.303633039+00:00","action":"integrate","node_id":"JMpv.vJdi","reason":"test node, cleaning up"}
+{"ts":"2026-03-07T19:56:42.098431099+00:00","action":"create","node_id":"JMpv.8cJK","detail":"Enforce state transitions on claim"}
+{"ts":"2026-03-07T19:56:42.099600307+00:00","action":"create","node_id":"JMpv.ihnS","detail":"Validate edge endpoints exist"}
+{"ts":"2026-03-07T19:56:42.100816963+00:00","action":"create","node_id":"JMpv.zFkc","detail":"Add cx rm command"}
+{"ts":"2026-03-07T19:56:42.102129696+00:00","action":"create","node_id":"JMpv.m71c","detail":"Add cx find title search"}
+{"ts":"2026-03-07T19:56:42.103497227+00:00","action":"create","node_id":"JMpv.UBLS","detail":"Hierarchical cx tree --json"}
+{"ts":"2026-03-07T19:56:42.104699353+00:00","action":"create","node_id":"JMpv.BoO6","detail":"File locking on graph.json writes"}
+{"ts":"2026-03-07T19:56:42.105988977+00:00","action":"create","node_id":"JMpv.FykS","detail":"Orphan detection in cx therapy"}
+{"ts":"2026-03-07T19:56:42.107391676+00:00","action":"create","node_id":"JMpv.wQtF","detail":"Integration tests for recent features"}
+{"ts":"2026-03-07T19:56:45.541464131+00:00","action":"surface","node_id":"JMpv.8cJK"}
+{"ts":"2026-03-07T19:56:45.542614540+00:00","action":"surface","node_id":"JMpv.ihnS"}
+{"ts":"2026-03-07T19:56:45.543762529+00:00","action":"surface","node_id":"JMpv.zFkc"}
+{"ts":"2026-03-07T19:56:45.544873149+00:00","action":"surface","node_id":"JMpv.m71c"}
+{"ts":"2026-03-07T19:56:45.546443812+00:00","action":"surface","node_id":"JMpv.UBLS"}
+{"ts":"2026-03-07T19:56:45.547897340+00:00","action":"surface","node_id":"JMpv.BoO6"}
+{"ts":"2026-03-07T19:56:45.549180863+00:00","action":"surface","node_id":"JMpv.FykS"}
+{"ts":"2026-03-07T19:56:45.550293563+00:00","action":"surface","node_id":"JMpv.wQtF"}
+{"ts":"2026-03-07T19:56:45.551591016+00:00","action":"surface","node_id":"JMpv"}
+{"ts":"2026-03-07T19:56:48.587133631+00:00","action":"claim","node_id":"JMpv.8cJK","part":"claude"}
+{"ts":"2026-03-07T19:56:48.588552090+00:00","action":"claim","node_id":"JMpv.ihnS","part":"claude"}
+{"ts":"2026-03-07T19:56:48.589778916+00:00","action":"claim","node_id":"JMpv.zFkc","part":"claude"}
+{"ts":"2026-03-07T20:05:20.801147628+00:00","action":"integrate","node_id":"JMpv.8cJK","reason":"claim now rejects latent nodes"}
+{"ts":"2026-03-07T20:05:20.802643553+00:00","action":"integrate","node_id":"JMpv.ihnS","reason":"edge endpoints validated before creation"}
+{"ts":"2026-03-07T20:05:20.803850299+00:00","action":"integrate","node_id":"JMpv.zFkc","reason":"cx rm command implemented with child protection"}
+{"ts":"2026-03-07T20:05:24.484720103+00:00","action":"claim","node_id":"JMpv.m71c","part":"claude"}
+{"ts":"2026-03-07T20:05:24.485924829+00:00","action":"claim","node_id":"JMpv.UBLS","part":"claude"}
+{"ts":"2026-03-07T20:05:24.487133855+00:00","action":"claim","node_id":"JMpv.BoO6","part":"claude"}
+{"ts":"2026-03-07T20:07:45.705741095+00:00","action":"integrate","node_id":"JMpv.m71c","reason":"cx find with case-insensitive substring search"}
+{"ts":"2026-03-07T20:07:45.707214321+00:00","action":"integrate","node_id":"JMpv.UBLS","reason":"tree --json now outputs hierarchical structure with children arrays"}
+{"ts":"2026-03-07T20:07:45.708628969+00:00","action":"integrate","node_id":"JMpv.BoO6","reason":"fs2 advisory lock on graph.json during save"}
+{"ts":"2026-03-07T20:07:48.913643201+00:00","action":"claim","node_id":"JMpv.FykS","part":"claude"}
+{"ts":"2026-03-07T20:07:48.914846227+00:00","action":"claim","node_id":"JMpv.wQtF","part":"claude"}
+{"ts":"2026-03-07T20:08:54.202464540+00:00","action":"integrate","node_id":"JMpv.FykS","reason":"therapy now detects orphan .md files in issues/"}
+{"ts":"2026-03-07T20:08:54.203863629+00:00","action":"integrate","node_id":"JMpv.wQtF","reason":"16 new integration tests: rm, find, claim enforcement, tree --json hierarchy, orphan detection, edge validation"}
+{"ts":"2026-03-07T21:39:36.763957012+00:00","action":"integrate","node_id":"JMpv","reason":"all 8 subtasks integrated: rm, find, claim enforcement, tree --json, file locking, orphan detection, edge validation, tests"}
+{"ts":"2026-03-08T00:07:28.801593012+00:00","action":"create","node_id":"chfy","detail":"cx status command — combined tree + surface output"}
+{"ts":"2026-03-08T00:10:35.992204845+00:00","action":"create","node_id":"chfy.6otE","detail":"heredoc pipe pattern triggers Claude Code approval"}
+{"ts":"2026-03-08T00:16:04.318864609+00:00","action":"integrate","node_id":"chfy","reason":"cx status command implemented, tests pass, docs updated"}
+{"ts":"2026-03-08T00:21:43.350767992+00:00","action":"create","node_id":"61bE","detail":"cx rm should archive before deleting"}
+{"ts":"2026-03-08T00:23:38.650265265+00:00","action":"surface","node_id":"61bE"}
+{"ts":"2026-03-08T00:23:38.652174048+00:00","action":"claim","node_id":"61bE","part":"claude"}
+{"ts":"2026-03-08T00:28:52.817048708+00:00","action":"integrate","node_id":"61bE","reason":"cx rm now archives before deleting — tests pass, clippy clean"}
+{"ts":"2026-03-08T00:30:09.140656318+00:00","action":"create","node_id":"0FkG","detail":"cx edit should emit an event"}
+{"ts":"2026-03-08T00:32:20.384390543+00:00","action":"create","node_id":"esX7","detail":"Agent-friendly body input without cat heredoc"}
+{"ts":"2026-03-08T00:35:54.099261473+00:00","action":"surface","node_id":"esX7"}
+{"ts":"2026-03-08T00:35:54.101145335+00:00","action":"claim","node_id":"esX7","part":"claude"}
+{"ts":"2026-03-08T00:37:53.086574932+00:00","action":"integrate","node_id":"esX7","reason":"added --body-file/-F to add and new, updated CLAUDE.md"}
+{"ts":"2026-03-08T00:46:05.201903515+00:00","action":"surface","node_id":"0FkG"}
+{"ts":"2026-03-08T00:46:58.668602553+00:00","action":"claim","node_id":"0FkG","part":"claude"}
+{"ts":"2026-03-08T00:47:53.223102936+00:00","action":"integrate","node_id":"0FkG","reason":"emit added, test passes"}
+{"ts":"2026-03-08T00:52:14.591062878+00:00","action":"create","node_id":"ioWT","detail":"CX_DIR env var + --ephemeral init"}
+{"ts":"2026-03-08T00:58:48.250602471+00:00","action":"surface","node_id":"ioWT"}
+{"ts":"2026-03-08T00:58:48.252250979+00:00","action":"claim","node_id":"ioWT","part":"claude"}
+{"ts":"2026-03-08T01:00:11.523588436+00:00","action":"integrate","node_id":"ioWT","reason":"CX_DIR + --ephemeral implemented, 5 tests pass"}
+{"ts":"2026-03-08T17:33:27.423567550+00:00","action":"create","node_id":"hPKU","detail":"Add filed_by field to track who created a task"}
+{"ts":"2026-03-08T17:33:30.266085583+00:00","action":"surface","node_id":"hPKU"}
+{"ts":"2026-03-08T17:33:30.267525242+00:00","action":"claim","node_id":"hPKU","part":"claude"}
+{"ts":"2026-03-08T17:38:23.346548726+00:00","action":"integrate","node_id":"hPKU","reason":"implemented filed_by — all 109 tests pass, clippy clean"}
+{"ts":"2026-03-08T17:40:05.846746609+00:00","action":"create","node_id":"NYSO","detail":"test filed_by"}
+{"ts":"2026-03-08T17:40:08.712691115+00:00","action":"rm","node_id":"NYSO","detail":"test filed_by"}
+{"ts":"2026-03-08T22:40:16.215158396+00:00","action":"create","node_id":"mDmw","detail":"cx claim silently succeeds on nonexistent task IDs"}
+{"ts":"2026-03-08T22:48:01.244936942+00:00","action":"rm","node_id":"mDmw","detail":"cx claim silently succeeds on nonexistent task IDs","reason":"not reproducible — id::resolve correctly errors on nonexistent IDs; likely caused by concurrent write race in the caller's environment, not a cx bug"}
+{"ts":"2026-03-08T23:05:11.485993269+00:00","action":"create","node_id":"AY37","detail":"Block edges don't propagate to children of blocked parent"}
+{"ts":"2026-03-08T23:07:58.308549122+00:00","action":"surface","node_id":"AY37"}
+{"ts":"2026-03-08T23:07:58.310338614+00:00","action":"claim","node_id":"AY37","part":"claude"}
+{"ts":"2026-03-08T23:09:45.629848935+00:00","action":"integrate","node_id":"AY37","reason":"block edges now propagate to children — fixed in db::ready_nodes SQL and cmd_claim"}
+{"ts":"2026-03-08T23:26:38.257778006+00:00","action":"create","node_id":"6lgG","detail":"cx move: reparent a node under a new parent"}
+{"ts":"2026-03-08T23:26:40.720429322+00:00","action":"surface","node_id":"6lgG"}
+{"ts":"2026-03-08T23:26:40.722068225+00:00","action":"claim","node_id":"6lgG","part":"claude"}
+{"ts":"2026-03-08T23:33:20.505866761+00:00","action":"integrate","node_id":"6lgG","reason":"cx move/mv command with tests"}
+{"ts":"2026-03-10T16:31:34.239103829+00:00","action":"create","node_id":"kZy2","detail":"bug: cx block missing --reason flag"}
+{"ts":"2026-03-10T16:31:34.249228263+00:00","action":"surface","node_id":"kZy2"}
+{"ts":"2026-03-11T17:22:50.539434448+00:00","action":"create","node_id":"KfdK","detail":"Feature: tag propagation from parent to children"}
+{"ts":"2026-03-11T17:32:30.790723482+00:00","action":"edit","node_id":"KfdK"}
+{"ts":"2026-03-11T17:32:35.506884460+00:00","action":"create","node_id":"KfdK.ty9q","detail":"Add tags field to Node model + serde default + graph version migration"}
+{"ts":"2026-03-11T17:32:35.508238061+00:00","action":"create","node_id":"KfdK.eFJt","detail":"Add cx tag / cx untag commands"}
+{"ts":"2026-03-11T17:32:35.509592812+00:00","action":"create","node_id":"KfdK.RmIq","detail":"Add effective_tags() computation — walk ancestor IDs"}
+{"ts":"2026-03-11T17:32:35.511092858+00:00","action":"create","node_id":"KfdK.BRhG","detail":"Materialize effective tags in SQLite db layer"}
+{"ts":"2026-03-11T17:32:35.512341403+00:00","action":"create","node_id":"KfdK.CuVI","detail":"Add --tag filter to list, find, tree"}
+{"ts":"2026-03-11T17:32:35.513963365+00:00","action":"create","node_id":"KfdK.8iso","detail":"Denormalize effective tags into archive on integrate"}
+{"ts":"2026-03-11T17:32:35.515295986+00:00","action":"create","node_id":"KfdK.Ko7X","detail":"Add --tag flag to cx add / cx new"}
+{"ts":"2026-03-11T17:32:35.516827411+00:00","action":"create","node_id":"KfdK.kfg1","detail":"Tests for tag propagation"}
+{"ts":"2026-03-11T17:32:39.684606070+00:00","action":"surface","node_id":"KfdK.ty9q"}
+{"ts":"2026-03-11T17:32:39.685922143+00:00","action":"surface","node_id":"KfdK.kfg1"}
+{"ts":"2026-03-11T17:34:11.370374056+00:00","action":"claim","node_id":"KfdK.ty9q","part":"claude"}
+{"ts":"2026-03-11T17:42:08.437560462+00:00","action":"integrate","node_id":"KfdK.ty9q","reason":"added tags field to Node, serde default for backwards compat"}
+{"ts":"2026-03-11T17:42:08.438993900+00:00","action":"integrate","node_id":"KfdK.eFJt","reason":"tag/untag/tags commands implemented"}
+{"ts":"2026-03-11T17:42:08.440495505+00:00","action":"integrate","node_id":"KfdK.RmIq","reason":"effective_tags() on Graph walks ancestor IDs"}
+{"ts":"2026-03-11T17:42:08.442084128+00:00","action":"integrate","node_id":"KfdK.BRhG","reason":"skipped — filtering done in Rust, not SQL materialization"}
+{"ts":"2026-03-11T17:42:08.443580784+00:00","action":"integrate","node_id":"KfdK.CuVI","reason":"list/find/tree all accept --tag filter"}
+{"ts":"2026-03-11T17:42:08.445043831+00:00","action":"integrate","node_id":"KfdK.8iso","reason":"effective tags baked into archived node on integrate"}
+{"ts":"2026-03-11T17:42:08.446429390+00:00","action":"integrate","node_id":"KfdK.Ko7X","reason":"add/new accept --tag flag"}
+{"ts":"2026-03-11T17:42:08.447864698+00:00","action":"integrate","node_id":"KfdK.kfg1","reason":"14 integration tests covering all tag behaviors"}
+{"ts":"2026-03-11T17:42:08.449208939+00:00","action":"integrate","node_id":"KfdK","reason":"complete — all subtasks done"}
+{"ts":"2026-03-25T18:10:35.598810392+00:00","action":"create","node_id":"5Tik","detail":"Separate integrate from archive: two-phase completion"}
+{"ts":"2026-03-28T12:40:31.637247338+00:00","action":"create","node_id":"tm2k","detail":"ID collision risk: detect and retry on duplicate base62 IDs"}
+{"ts":"2026-03-28T12:41:17.654120552+00:00","action":"surface","node_id":"tm2k"}
+{"ts":"2026-03-28T12:57:54.890708158+00:00","action":"edit","node_id":"tm2k"}
+{"ts":"2026-03-28T12:58:09.656528299+00:00","action":"claim","node_id":"tm2k","part":"claude"}
+{"ts":"2026-03-28T13:00:58.933916998+00:00","action":"integrate","node_id":"tm2k","reason":"collision detection on create — tests pass, clippy clean"}
+{"ts":"2026-03-29T13:09:42.361096119+00:00","action":"create","node_id":"dUjp","detail":"cx comments: append-only comment thread on issues"}
+{"ts":"2026-03-29T13:10:02.798500959+00:00","action":"edit","node_id":"dUjp"}
+{"ts":"2026-03-29T13:11:48.691498296+00:00","action":"edit","node_id":"dUjp"}
+{"ts":"2026-03-29T13:14:01.301310011+00:00","action":"edit","node_id":"dUjp"}
+{"ts":"2026-03-29T13:18:38.837478450+00:00","action":"surface","node_id":"dUjp"}
+{"ts":"2026-03-29T13:18:38.839271354+00:00","action":"claim","node_id":"dUjp","part":"claude"}
+{"ts":"2026-03-29T13:18:48.414154157+00:00","action":"create","node_id":"dUjp.npdM","detail":"model: Comment struct + Node.comments field"}
+{"ts":"2026-03-29T13:18:48.415445490+00:00","action":"create","node_id":"dUjp.WapK","detail":"store: comment persistence in .comments.json files"}
+{"ts":"2026-03-29T13:18:48.416718073+00:00","action":"create","node_id":"dUjp.XRQ9","detail":"cli: Comment and Comments subcommands"}
+{"ts":"2026-03-29T13:18:48.417964517+00:00","action":"create","node_id":"dUjp.MUrF","detail":"show: display comments in cx show"}
+{"ts":"2026-03-29T13:18:48.419305828+00:00","action":"create","node_id":"dUjp.rnDj","detail":"tests: integration tests for comment commands"}
+{"ts":"2026-03-29T13:18:53.505298906+00:00","action":"surface","node_id":"dUjp.npdM"}
+{"ts":"2026-03-29T13:18:53.506984424+00:00","action":"claim","node_id":"dUjp.npdM","part":"claude"}
+{"ts":"2026-03-29T13:21:23.458724448+00:00","action":"integrate","node_id":"dUjp.npdM","reason":"Comment struct + comments field added to model"}
+{"ts":"2026-03-29T13:21:23.458762977+00:00","action":"surface","node_id":"dUjp.WapK","reason":"auto-surfaced: last blocker integrated"}
+{"ts":"2026-03-29T13:21:26.581053795+00:00","action":"claim","node_id":"dUjp.WapK","part":"claude"}
+{"ts":"2026-03-29T13:22:08.839323582+00:00","action":"integrate","node_id":"dUjp.WapK","reason":"comment persistence in .comments.json files"}
+{"ts":"2026-03-29T13:22:08.839359511+00:00","action":"surface","node_id":"dUjp.XRQ9","reason":"auto-surfaced: last blocker integrated"}
+{"ts":"2026-03-29T13:22:12.576106100+00:00","action":"claim","node_id":"dUjp.XRQ9","part":"claude"}
+{"ts":"2026-03-29T13:23:11.719780682+00:00","action":"integrate","node_id":"dUjp.XRQ9","reason":"Comment and Comments subcommands added"}
+{"ts":"2026-03-29T13:23:11.719814950+00:00","action":"surface","node_id":"dUjp.MUrF","reason":"auto-surfaced: last blocker integrated"}
+{"ts":"2026-03-29T13:23:16.608449491+00:00","action":"claim","node_id":"dUjp.MUrF","part":"claude"}
+{"ts":"2026-03-29T13:23:43.809208423+00:00","action":"integrate","node_id":"dUjp.MUrF","reason":"cx show now displays comment thread"}
+{"ts":"2026-03-29T13:23:43.809254311+00:00","action":"surface","node_id":"dUjp.rnDj","reason":"auto-surfaced: last blocker integrated"}
+{"ts":"2026-03-29T13:23:50.052208315+00:00","action":"claim","node_id":"dUjp.rnDj","part":"claude"}
+{"ts":"2026-03-29T13:25:26.016490867+00:00","action":"integrate","node_id":"dUjp.rnDj","reason":"9 integration tests all pass"}
+{"ts":"2026-03-29T13:25:26.018030890+00:00","action":"integrate","node_id":"dUjp","reason":"comments feature complete — model, store, CLI, show, tests"}
+{"ts":"2026-03-29T16:47:28.207340734+00:00","action":"create","node_id":"GZ1W","detail":"unarchive command + preserve edges across archive/unarchive"}
+{"ts":"2026-03-29T16:47:47.625031410+00:00","action":"edit","node_id":"GZ1W"}
+{"ts":"2026-03-29T16:47:52.767406820+00:00","action":"create","node_id":"GZ1W.c6XZ","detail":"store: archive edges to edges.jsonl instead of dropping"}
+{"ts":"2026-03-29T16:47:52.769345550+00:00","action":"create","node_id":"GZ1W.gE7n","detail":"store: unarchive_node — restore node + edges from archive"}
+{"ts":"2026-03-29T16:47:52.771142845+00:00","action":"create","node_id":"GZ1W.1CsZ","detail":"CLI: Unarchive subcommand"}
+{"ts":"2026-03-29T16:47:52.772930912+00:00","action":"create","node_id":"GZ1W.h2MX","detail":"store: scrub archived edges on cx rm"}
+{"ts":"2026-03-29T16:47:52.774603022+00:00","action":"create","node_id":"GZ1W.PYl2","detail":"tests: archive/unarchive edge preservation scenarios"}
+{"ts":"2026-03-29T16:47:55.115154914+00:00","action":"surface","node_id":"GZ1W.c6XZ"}
+{"ts":"2026-03-29T16:47:55.116921091+00:00","action":"surface","node_id":"GZ1W.PYl2"}
+{"ts":"2026-03-29T16:48:25.700579997+00:00","action":"claim","node_id":"GZ1W.PYl2","part":"claude"}
+{"ts":"2026-03-29T16:48:25.702416131+00:00","action":"claim","node_id":"GZ1W.c6XZ","part":"claude"}
+{"ts":"2026-03-29T17:34:29.814807328+00:00","action":"integrate","node_id":"GZ1W.c6XZ","reason":"archive_node now moves edges to edges.jsonl instead of dropping"}
+{"ts":"2026-03-29T17:34:29.814847766+00:00","action":"surface","node_id":"GZ1W.gE7n","reason":"auto-surfaced: last blocker integrated"}
+{"ts":"2026-03-29T17:34:29.814875695+00:00","action":"surface","node_id":"GZ1W.h2MX","reason":"auto-surfaced: last blocker integrated"}
+{"ts":"2026-03-29T17:34:29.816354015+00:00","action":"integrate","node_id":"GZ1W.gE7n","reason":"unarchive_node restores node + edges from archive"}
+{"ts":"2026-03-29T17:34:29.816387054+00:00","action":"surface","node_id":"GZ1W.1CsZ","reason":"auto-surfaced: last blocker integrated"}
+{"ts":"2026-03-29T17:34:29.817874352+00:00","action":"integrate","node_id":"GZ1W.1CsZ","reason":"Unarchive subcommand wired up"}
+{"ts":"2026-03-29T17:34:29.819584323+00:00","action":"integrate","node_id":"GZ1W.h2MX","reason":"cmd_rm calls scrub_archived_edges"}
+{"ts":"2026-03-29T17:34:29.821094451+00:00","action":"integrate","node_id":"GZ1W.PYl2","reason":"9 integration tests covering all 6 scenarios"}
+{"ts":"2026-03-29T17:34:29.822904069+00:00","action":"integrate","node_id":"GZ1W","reason":"all subtasks complete, 161 tests pass"}
+{"ts":"2026-03-29T19:44:21.871409761+00:00","action":"create","node_id":"pjbQ","detail":"Remove agents.json management from complex"}
+{"ts":"2026-03-29T19:47:00.246143929+00:00","action":"integrate","node_id":"pjbQ","reason":"removed agents.json management — orchestrator concern"}
+{"ts":"2026-03-29T19:59:59.999659059+00:00","action":"create","node_id":"tYvL","detail":"Docs overhaul: README + CONTRIBUTING + design doc"}
+{"ts":"2026-03-29T20:00:04.741438515+00:00","action":"create","node_id":"tYvL.ayIX","detail":"README.md — practical user guide"}
+{"ts":"2026-03-29T20:00:04.743127183+00:00","action":"create","node_id":"tYvL.8wit","detail":"CONTRIBUTING.md — build/test/project structure"}
+{"ts":"2026-03-29T20:00:04.744948816+00:00","action":"create","node_id":"tYvL.jEgs","detail":"docs/design.md — theory and architecture"}
+{"ts":"2026-03-29T20:00:04.747007801+00:00","action":"create","node_id":"tYvL.Faxt","detail":"Delete docs/prd/README.md"}
+{"ts":"2026-03-29T20:00:09.113848366+00:00","action":"surface","node_id":"tYvL.ayIX"}
+{"ts":"2026-03-29T20:00:09.115467087+00:00","action":"surface","node_id":"tYvL.8wit"}
+{"ts":"2026-03-29T20:00:09.116967422+00:00","action":"surface","node_id":"tYvL.jEgs"}
+{"ts":"2026-03-29T20:00:09.118440598+00:00","action":"surface","node_id":"tYvL.Faxt"}
+{"ts":"2026-03-29T20:00:09.120142466+00:00","action":"claim","node_id":"tYvL.ayIX","part":"claude"}
+{"ts":"2026-03-29T20:00:09.121558795+00:00","action":"claim","node_id":"tYvL.8wit","part":"claude"}
+{"ts":"2026-03-29T20:00:09.122929984+00:00","action":"claim","node_id":"tYvL.jEgs","part":"claude"}
+{"ts":"2026-03-29T20:00:09.124394091+00:00","action":"claim","node_id":"tYvL.Faxt","part":"claude"}
+{"ts":"2026-03-29T20:02:34.638544923+00:00","action":"integrate","node_id":"tYvL.ayIX","reason":"README rewritten as practical user guide"}
+{"ts":"2026-03-29T20:02:34.640236631+00:00","action":"integrate","node_id":"tYvL.8wit","reason":"CONTRIBUTING.md created"}
+{"ts":"2026-03-29T20:02:34.641861232+00:00","action":"integrate","node_id":"tYvL.jEgs","reason":"docs/design.md created with theory/architecture"}
+{"ts":"2026-03-29T20:02:34.643418035+00:00","action":"integrate","node_id":"tYvL.Faxt","reason":"docs/prd/README.md deleted"}
+{"ts":"2026-03-29T20:02:34.644912391+00:00","action":"integrate","node_id":"tYvL","reason":"all docs updated"}

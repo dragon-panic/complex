@@ -1,0 +1,4 @@
+- id.rs: generate() drops parent param, always produces 4-char IDs
+- main.rs: cmd_add/cmd_new pass no parent to generate
+- id.rs: resolve() simplify (exact match primary, keep suffix fallback)
+- Update ~10 integration tests that assert dot-separated ID format
