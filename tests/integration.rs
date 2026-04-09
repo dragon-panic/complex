@@ -3211,6 +3211,31 @@ fn log_since_filters_commits() {
 }
 
 #[test]
+fn log_shows_comment_and_body_changes() {
+    let dir = TempDir::new().unwrap();
+    git_init(&dir);
+    init(&dir);
+    let id = add(&dir, "Documented task");
+    git_commit(&dir, "create task");
+
+    // Add body and comment
+    cx(&dir).args(["edit", &id, "--body", "Some details"]).assert().success();
+    cx(&dir).args(["comment", &id, "--as", "alice", "a note"]).assert().success();
+    git_commit(&dir, "add body and comment");
+
+    let out = cx(&dir)
+        .args(["--json", "log", "--limit", "1"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let commits: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    let changes = commits[0]["changes"].as_array().unwrap();
+    let actions: Vec<&str> = changes.iter().filter_map(|c| c["action"].as_str()).collect();
+    assert!(actions.contains(&"body_added"), "expected body_added, got {:?}", actions);
+    assert!(actions.contains(&"comments_changed"), "expected comments_changed, got {:?}", actions);
+}
+
+#[test]
 fn log_no_git_repo_fails_gracefully() {
     let dir = TempDir::new().unwrap();
     // No git init — just cx init

@@ -5,8 +5,8 @@
   "shadowed": false,
   "part": "claude",
   "created_at": "2026-04-09T13:32:25.057454852Z",
-  "updated_at": "2026-04-09T13:35:46.491155637Z",
+  "updated_at": "2026-04-09T13:40:46.294448343Z",
   "meta": {
-    "_reason": "cx log diffs node files per commit, --since filter for pagination"
+    "_reason": "extended to diff issues/, archive/, comments"
   }
 }

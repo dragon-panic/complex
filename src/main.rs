@@ -1851,6 +1851,11 @@ fn cmd_log(limit: usize, since: Option<String>, json: bool) -> Result<()> {
                         }
                         println!("  ~ {}", parts.join("  "));
                     }
+                    "archived" => println!("  x {}  archived", node_id),
+                    "unarchived" => println!("  o {}  unarchived", node_id),
+                    "body_added" | "body_edited" => println!("  ~ {}  body", node_id),
+                    "body_removed" => println!("  - {}  body removed", node_id),
+                    "comments_changed" => println!("  ~ {}  comments", node_id),
                     _ => {}
                 }
             }
@@ -1863,11 +1868,10 @@ fn cmd_log(limit: usize, since: Option<String>, json: bool) -> Result<()> {
 fn diff_commit(hash: &str, root: &std::path::Path) -> Vec<serde_json::Value> {
     let mut changes = Vec::new();
 
-    // Get list of changed files in this commit under .complex/nodes/
-    // --root handles the initial commit (no parent to diff against)
+    // Single diff-tree call against the whole .complex/ directory
     let output = std::process::Command::new("git")
         .args(["diff-tree", "--no-commit-id", "--root", "-r", "--diff-filter=ADMT", hash, "--"])
-        .arg(root.join("nodes"))
+        .arg(root)
         .output();
 
     let output = match output {
@@ -1878,65 +1882,105 @@ fn diff_commit(hash: &str, root: &std::path::Path) -> Vec<serde_json::Value> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     for line in stdout.lines() {
         // Format: :old_mode new_mode old_hash new_hash status\tpath
-        let Some((_modes, rest)) = line.split_once('\t') else { continue };
-        let path = rest;
+        let Some((modes, path)) = line.split_once('\t') else { continue };
+        let status = modes.split_whitespace().last().unwrap_or("?");
+        let status_char = status.chars().next().unwrap_or('?');
 
-        // Only care about node JSON files
-        if !path.contains("nodes/") || !path.ends_with(".json") {
-            continue;
-        }
-
-        // Extract node ID from filename (e.g., "nodes/lnIl.json" → "lnIl")
-        let node_id = path
-            .rsplit('/')
-            .next()
-            .and_then(|f| f.strip_suffix(".json"))
-            .unwrap_or("?");
-
-        let status = _modes.split_whitespace().last().unwrap_or("?");
-        match status.chars().next() {
-            Some('A') => {
-                // New file — node created
-                if let Some(node) = git_show_json(hash, path) {
-                    changes.push(serde_json::json!({
-                        "node_id": node_id,
-                        "action": "created",
-                        "title": node["title"].as_str().unwrap_or(""),
-                        "state": node["state"].as_str().unwrap_or("latent"),
-                    }));
-                } else {
-                    changes.push(serde_json::json!({
-                        "node_id": node_id,
-                        "action": "created",
-                    }));
-                }
+        // Route by path pattern
+        if path.contains("/nodes/") && path.ends_with(".json") {
+            let node_id = extract_id(path, ".json");
+            diff_node_file(&mut changes, hash, path, &node_id, status_char);
+        } else if path.contains("/archive/nodes/") && path.ends_with(".json") {
+            let node_id = extract_id(path, ".json");
+            match status_char {
+                'A' => changes.push(serde_json::json!({
+                    "node_id": node_id, "action": "archived",
+                })),
+                'D' => changes.push(serde_json::json!({
+                    "node_id": node_id, "action": "unarchived",
+                })),
+                _ => {}
             }
-            Some('D') => {
-                changes.push(serde_json::json!({
-                    "node_id": node_id,
-                    "action": "removed",
-                }));
+        } else if path.contains("/issues/") && path.ends_with(".md") {
+            let node_id = extract_id(path, ".md");
+            match status_char {
+                'A' => changes.push(serde_json::json!({
+                    "node_id": node_id, "action": "body_added",
+                })),
+                'M' => changes.push(serde_json::json!({
+                    "node_id": node_id, "action": "body_edited",
+                })),
+                'D' => changes.push(serde_json::json!({
+                    "node_id": node_id, "action": "body_removed",
+                })),
+                _ => {}
             }
-            Some('M') | Some('T') => {
-                // Modified — diff before/after
-                let before = git_show_json(&format!("{}^", hash), path);
-                let after = git_show_json(hash, path);
-                if let (Some(before), Some(after)) = (before, after) {
-                    let fields = diff_node_fields(&before, &after);
-                    if !fields.is_null() {
-                        changes.push(serde_json::json!({
-                            "node_id": node_id,
-                            "action": "modified",
-                            "fields": fields,
-                        }));
-                    }
-                }
-            }
-            _ => {}
+        } else if path.contains("/issues/") && path.ends_with(".comments.json") {
+            let node_id = extract_id(path, ".comments.json");
+            changes.push(serde_json::json!({
+                "node_id": node_id, "action": "comments_changed",
+            }));
         }
     }
 
     changes
+}
+
+/// Extract node ID from a path like ".complex/nodes/lnIl.json" given suffix ".json".
+fn extract_id(path: &str, suffix: &str) -> String {
+    path.rsplit('/')
+        .next()
+        .and_then(|f| f.strip_suffix(suffix))
+        .unwrap_or("?")
+        .to_string()
+}
+
+/// Process a changed node file (under nodes/).
+fn diff_node_file(
+    changes: &mut Vec<serde_json::Value>,
+    hash: &str,
+    path: &str,
+    node_id: &str,
+    status: char,
+) {
+    match status {
+        'A' => {
+            if let Some(node) = git_show_json(hash, path) {
+                changes.push(serde_json::json!({
+                    "node_id": node_id,
+                    "action": "created",
+                    "title": node["title"].as_str().unwrap_or(""),
+                    "state": node["state"].as_str().unwrap_or("latent"),
+                }));
+            } else {
+                changes.push(serde_json::json!({
+                    "node_id": node_id,
+                    "action": "created",
+                }));
+            }
+        }
+        'D' => {
+            changes.push(serde_json::json!({
+                "node_id": node_id,
+                "action": "removed",
+            }));
+        }
+        'M' | 'T' => {
+            let before = git_show_json(&format!("{}^", hash), path);
+            let after = git_show_json(hash, path);
+            if let (Some(before), Some(after)) = (before, after) {
+                let fields = diff_node_fields(&before, &after);
+                if !fields.is_null() {
+                    changes.push(serde_json::json!({
+                        "node_id": node_id,
+                        "action": "modified",
+                        "fields": fields,
+                    }));
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Read a JSON file at a specific git revision.
