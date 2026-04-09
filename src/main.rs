@@ -255,6 +255,9 @@ enum Commands {
     Log {
         #[arg(long, default_value = "20")]
         limit: usize,
+        /// Only show commits after this SHA (exclusive)
+        #[arg(long)]
+        since: Option<String>,
     },
 
     /// Append, edit, or remove a comment on a node
@@ -333,7 +336,7 @@ fn run(cli: Cli) -> Result<()> {
         Commands::List { state, filed_by, tag } => cmd_list(state, filed_by, tag, cli.json),
         Commands::Agent => { print!("{}", AGENT_GUIDE); Ok(()) },
         Commands::Meta { id, value } => cmd_meta(id, value, cli.json),
-        Commands::Log { limit } => cmd_log(limit, cli.json),
+        Commands::Log { limit, since } => cmd_log(limit, since, cli.json),
         Commands::Comment { id, body, tag, r#as, file, edit, rm } => cmd_comment(id, body.join(" "), tag, r#as, file, edit, rm, cli.json),
         Commands::Comments { id, tag } => cmd_comments(id, tag, cli.json),
         Commands::Status => cmd_status(cli.json),
@@ -1764,21 +1767,26 @@ fn cmd_list(state_filter: Option<String>, filed_by_filter: Option<String>, tag_f
 
 // ── log ───────────────────────────────────────────────────────────────────────
 
-fn cmd_log(limit: usize, json: bool) -> Result<()> {
+fn cmd_log(limit: usize, since: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
+    let nodes_path = root.join("nodes");
+    let issues_path = root.join("issues");
 
-    let nodes_arg = root.join("nodes");
-    let issues_arg = root.join("issues");
+    // Build git log command
+    let mut args = vec![
+        "log".to_string(),
+        "--pretty=format:%H%x00%aI%x00%s".to_string(),
+    ];
+    if let Some(ref sha) = since {
+        args.push(format!("{}..HEAD", sha));
+    }
+    args.push(format!("-{}", limit));
+    args.push("--".to_string());
+    args.push(nodes_path.to_string_lossy().to_string());
+    args.push(issues_path.to_string_lossy().to_string());
 
     let output = std::process::Command::new("git")
-        .args([
-            "log",
-            "--pretty=format:%H%x00%aI%x00%s",
-            &format!("-{}", limit),
-            "--",
-        ])
-        .arg(&nodes_arg)
-        .arg(&issues_arg)
+        .args(&args)
         .output()
         .context("failed to run git log — is this a git repository?")?;
 
@@ -1788,40 +1796,207 @@ fn cmd_log(limit: usize, json: bool) -> Result<()> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let entries: Vec<(&str, &str, &str)> = stdout
+    let commits: Vec<(&str, &str, &str)> = stdout
         .lines()
         .filter(|l| !l.is_empty())
         .filter_map(|line| {
             let mut parts = line.splitn(3, '\0');
-            let hash = parts.next()?;
-            let date = parts.next()?;
-            let subject = parts.next()?;
-            Some((hash, date, subject))
+            Some((parts.next()?, parts.next()?, parts.next()?))
         })
         .collect();
 
     if json {
-        let out: Vec<serde_json::Value> = entries
+        let out: Vec<serde_json::Value> = commits
             .iter()
             .map(|(hash, date, subject)| {
+                let changes = diff_commit(hash, &root);
                 serde_json::json!({
                     "hash": hash,
                     "date": date,
                     "subject": subject,
+                    "changes": changes,
                 })
             })
             .collect();
         println!("{}", serde_json::to_string_pretty(&out)?);
-    } else if entries.is_empty() {
+    } else if commits.is_empty() {
         println!("no commits touching .complex/");
     } else {
-        for (hash, date, subject) in &entries {
+        for (hash, date, subject) in &commits {
             let short = &hash[..7.min(hash.len())];
             let ts = &date[..19.min(date.len())].replace('T', " ");
             println!("{}  {}  {}", ts, short, subject);
+            let changes = diff_commit(hash, &root);
+            for c in &changes {
+                let action = c["action"].as_str().unwrap_or("?");
+                let node_id = c["node_id"].as_str().unwrap_or("?");
+                match action {
+                    "created" => {
+                        let title = c["title"].as_str().unwrap_or("");
+                        let state = c["state"].as_str().unwrap_or("latent");
+                        println!("  + {}  {}  [{}]", node_id, title, state);
+                    }
+                    "removed" => {
+                        println!("  - {}", node_id);
+                    }
+                    "modified" => {
+                        let fields = c["fields"].as_object();
+                        let mut parts = vec![node_id.to_string()];
+                        if let Some(fields) = fields {
+                            for (key, val) in fields {
+                                let from = val["from"].as_str().unwrap_or("?");
+                                let to = val["to"].as_str().unwrap_or("?");
+                                parts.push(format!("{}: {} → {}", key, from, to));
+                            }
+                        }
+                        println!("  ~ {}", parts.join("  "));
+                    }
+                    _ => {}
+                }
+            }
         }
     }
     Ok(())
+}
+
+/// Diff a single commit to extract node-level changes.
+fn diff_commit(hash: &str, root: &std::path::Path) -> Vec<serde_json::Value> {
+    let mut changes = Vec::new();
+
+    // Get list of changed files in this commit under .complex/nodes/
+    // --root handles the initial commit (no parent to diff against)
+    let output = std::process::Command::new("git")
+        .args(["diff-tree", "--no-commit-id", "--root", "-r", "--diff-filter=ADMT", hash, "--"])
+        .arg(root.join("nodes"))
+        .output();
+
+    let output = match output {
+        Ok(o) if o.status.success() => o,
+        _ => return changes,
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        // Format: :old_mode new_mode old_hash new_hash status\tpath
+        let Some((_modes, rest)) = line.split_once('\t') else { continue };
+        let path = rest;
+
+        // Only care about node JSON files
+        if !path.contains("nodes/") || !path.ends_with(".json") {
+            continue;
+        }
+
+        // Extract node ID from filename (e.g., "nodes/lnIl.json" → "lnIl")
+        let node_id = path
+            .rsplit('/')
+            .next()
+            .and_then(|f| f.strip_suffix(".json"))
+            .unwrap_or("?");
+
+        let status = _modes.split_whitespace().last().unwrap_or("?");
+        match status.chars().next() {
+            Some('A') => {
+                // New file — node created
+                if let Some(node) = git_show_json(hash, path) {
+                    changes.push(serde_json::json!({
+                        "node_id": node_id,
+                        "action": "created",
+                        "title": node["title"].as_str().unwrap_or(""),
+                        "state": node["state"].as_str().unwrap_or("latent"),
+                    }));
+                } else {
+                    changes.push(serde_json::json!({
+                        "node_id": node_id,
+                        "action": "created",
+                    }));
+                }
+            }
+            Some('D') => {
+                changes.push(serde_json::json!({
+                    "node_id": node_id,
+                    "action": "removed",
+                }));
+            }
+            Some('M') | Some('T') => {
+                // Modified — diff before/after
+                let before = git_show_json(&format!("{}^", hash), path);
+                let after = git_show_json(hash, path);
+                if let (Some(before), Some(after)) = (before, after) {
+                    let fields = diff_node_fields(&before, &after);
+                    if !fields.is_null() {
+                        changes.push(serde_json::json!({
+                            "node_id": node_id,
+                            "action": "modified",
+                            "fields": fields,
+                        }));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    changes
+}
+
+/// Read a JSON file at a specific git revision.
+fn git_show_json(rev: &str, path: &str) -> Option<serde_json::Value> {
+    let output = std::process::Command::new("git")
+        .args(["show", &format!("{}:{}", rev, path)])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    serde_json::from_slice(&output.stdout).ok()
+}
+
+/// Compare two node JSON values and return a map of changed fields.
+fn diff_node_fields(before: &serde_json::Value, after: &serde_json::Value) -> serde_json::Value {
+    let mut fields = serde_json::Map::new();
+
+    for key in &["state", "title", "part", "shadowed", "parent"] {
+        let b = &before[key];
+        let a = &after[key];
+        if b != a {
+            fields.insert(key.to_string(), serde_json::json!({
+                "from": display_field(b),
+                "to": display_field(a),
+            }));
+        }
+    }
+
+    if fields.is_empty() {
+        // Check for edge or tag changes at a coarser level
+        if before["edges"] != after["edges"] {
+            fields.insert("edges".to_string(), serde_json::json!({
+                "from": before["edges"],
+                "to": after["edges"],
+            }));
+        }
+        if before["tags"] != after["tags"] {
+            fields.insert("tags".to_string(), serde_json::json!({
+                "from": before["tags"],
+                "to": after["tags"],
+            }));
+        }
+    }
+
+    if fields.is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::Value::Object(fields)
+    }
+}
+
+/// Format a JSON value for human display in diffs.
+fn display_field(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::Null => "∅".to_string(),
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        other => other.to_string(),
+    }
 }
 
 // ── status ────────────────────────────────────────────────────────────────────

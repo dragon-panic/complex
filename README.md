@@ -164,7 +164,7 @@ server, no port.
 | `cx comments <id>` | Read comment thread (`--tag` to filter) |
 | `cx parts` | Claimed nodes grouped by part |
 | `cx therapy` | Stale, shadowed, and stuck nodes |
-| `cx log` | Recent changes from git history (`--limit N`, default 20) |
+| `cx log` | Recent changes from git history (`--limit N`, `--since SHA`) |
 | `cx agent` | Print the agent guide |
 
 All mutation commands accept `--reason "..."` (stored in node metadata).

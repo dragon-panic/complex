@@ -3089,3 +3089,133 @@ fn unarchive_missing_id_fails() {
     cx(&dir).args(["unarchive", "ZZZZ"]).assert().failure();
 }
 
+// ── cx log (git-backed) ─────────────────────────────────────────────────────
+
+/// Helper: set up a git repo in the temp dir so cx log can read history.
+fn git_init(dir: &TempDir) {
+    std::process::Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["config", "user.name", "Test"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+}
+
+fn git_commit(dir: &TempDir, msg: &str) {
+    std::process::Command::new("git")
+        .args(["add", ".complex/"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["commit", "-m", msg, "--allow-empty"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+}
+
+fn git_rev(dir: &TempDir) -> String {
+    let out = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+#[test]
+fn log_shows_node_changes() {
+    let dir = TempDir::new().unwrap();
+    git_init(&dir);
+    init(&dir);
+    let id = add(&dir, "Test task");
+    git_commit(&dir, "create task");
+
+    let out = cx(&dir)
+        .args(["--json", "log", "--limit", "5"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let commits: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(!commits.is_empty());
+
+    // The commit should have changes listing the created node
+    let changes = commits[0]["changes"].as_array().unwrap();
+    let created: Vec<_> = changes.iter()
+        .filter(|c| c["action"] == "created")
+        .collect();
+    assert!(!created.is_empty(), "expected a 'created' change for the new node");
+    assert!(created.iter().any(|c| c["node_id"].as_str() == Some(&id)));
+}
+
+#[test]
+fn log_shows_state_transition() {
+    let dir = TempDir::new().unwrap();
+    git_init(&dir);
+    init(&dir);
+    let id = add(&dir, "Transition test");
+    git_commit(&dir, "create task");
+
+    surface_id(&dir, &id);
+    git_commit(&dir, "surface task");
+
+    let out = cx(&dir)
+        .args(["--json", "log", "--limit", "1"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let commits: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    let changes = commits[0]["changes"].as_array().unwrap();
+    let state_change = changes.iter()
+        .find(|c| c["node_id"].as_str() == Some(&id))
+        .expect("expected a change for our node");
+    assert_eq!(state_change["action"], "modified");
+    // Should show state transition
+    let fields = state_change["fields"].as_object().unwrap();
+    let state = fields.get("state").unwrap();
+    assert_eq!(state["from"], "latent");
+    assert_eq!(state["to"], "ready");
+}
+
+#[test]
+fn log_since_filters_commits() {
+    let dir = TempDir::new().unwrap();
+    git_init(&dir);
+    init(&dir);
+    let _a = add(&dir, "First");
+    git_commit(&dir, "first");
+
+    let cursor = git_rev(&dir);
+
+    let _b = add(&dir, "Second");
+    git_commit(&dir, "second");
+
+    // --since should only show commits after the cursor
+    let out = cx(&dir)
+        .args(["--json", "log", "--since", &cursor])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let commits: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(commits.len(), 1, "expected exactly 1 commit after cursor");
+    assert_eq!(commits[0]["subject"].as_str().unwrap(), "second");
+}
+
+#[test]
+fn log_no_git_repo_fails_gracefully() {
+    let dir = TempDir::new().unwrap();
+    // No git init — just cx init
+    init(&dir);
+
+    cx(&dir).args(["log"]).assert().failure();
+}
+
