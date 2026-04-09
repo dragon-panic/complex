@@ -3232,7 +3232,7 @@ fn log_shows_comment_and_body_changes() {
     let changes = commits[0]["changes"].as_array().unwrap();
     let actions: Vec<&str> = changes.iter().filter_map(|c| c["action"].as_str()).collect();
     assert!(actions.contains(&"body_added"), "expected body_added, got {:?}", actions);
-    assert!(actions.contains(&"comments_changed"), "expected comments_changed, got {:?}", actions);
+    assert!(actions.contains(&"comment_added"), "expected comment_added, got {:?}", actions);
 }
 
 #[test]

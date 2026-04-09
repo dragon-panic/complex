@@ -1853,9 +1853,38 @@ fn cmd_log(limit: usize, since: Option<String>, json: bool) -> Result<()> {
                     }
                     "archived" => println!("  x {}  archived", node_id),
                     "unarchived" => println!("  o {}  unarchived", node_id),
-                    "body_added" | "body_edited" => println!("  ~ {}  body", node_id),
+                    "body_added" | "body_edited" => {
+                        let snippet = c["snippet"].as_str().unwrap_or("");
+                        if snippet.is_empty() {
+                            println!("  ~ {}  body", node_id);
+                        } else {
+                            println!("  ~ {}  body: {}", node_id, snippet);
+                        }
+                    }
                     "body_removed" => println!("  - {}  body removed", node_id),
-                    "comments_changed" => println!("  ~ {}  comments", node_id),
+                    "comment_added" => {
+                        let author = c["author"].as_str().unwrap_or("?");
+                        let tag = c["tag"].as_str();
+                        let snippet = c["snippet"].as_str().unwrap_or("");
+                        let tag_str = tag.map(|t| format!(" #{}", t)).unwrap_or_default();
+                        if snippet.is_empty() {
+                            println!("  + {}  comment by {}{}", node_id, author, tag_str);
+                        } else {
+                            println!("  + {}  comment by {}{}: {}", node_id, author, tag_str, snippet);
+                        }
+                    }
+                    "comment_removed" => {
+                        let ts = c["timestamp"].as_str().unwrap_or("?");
+                        println!("  - {}  comment {}", node_id, ts);
+                    }
+                    "comment_edited" => {
+                        let snippet = c["snippet"].as_str().unwrap_or("");
+                        if snippet.is_empty() {
+                            println!("  ~ {}  comment edited", node_id);
+                        } else {
+                            println!("  ~ {}  comment edited: {}", node_id, snippet);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -1901,25 +1930,12 @@ fn diff_commit(hash: &str, root: &std::path::Path) -> Vec<serde_json::Value> {
                 })),
                 _ => {}
             }
-        } else if path.contains("/issues/") && path.ends_with(".md") {
-            let node_id = extract_id(path, ".md");
-            match status_char {
-                'A' => changes.push(serde_json::json!({
-                    "node_id": node_id, "action": "body_added",
-                })),
-                'M' => changes.push(serde_json::json!({
-                    "node_id": node_id, "action": "body_edited",
-                })),
-                'D' => changes.push(serde_json::json!({
-                    "node_id": node_id, "action": "body_removed",
-                })),
-                _ => {}
-            }
         } else if path.contains("/issues/") && path.ends_with(".comments.json") {
             let node_id = extract_id(path, ".comments.json");
-            changes.push(serde_json::json!({
-                "node_id": node_id, "action": "comments_changed",
-            }));
+            diff_comments(&mut changes, hash, path, &node_id, status_char);
+        } else if path.contains("/issues/") && path.ends_with(".md") {
+            let node_id = extract_id(path, ".md");
+            diff_body(&mut changes, hash, path, &node_id, status_char);
         }
     }
 
@@ -1993,6 +2009,160 @@ fn git_show_json(rev: &str, path: &str) -> Option<serde_json::Value> {
         return None;
     }
     serde_json::from_slice(&output.stdout).ok()
+}
+
+/// Read a text file at a specific git revision.
+fn git_show_text(rev: &str, path: &str) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .args(["show", &format!("{}:{}", rev, path)])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Diff a body (.md) file change.
+fn diff_body(
+    changes: &mut Vec<serde_json::Value>,
+    hash: &str,
+    path: &str,
+    node_id: &str,
+    status: char,
+) {
+    match status {
+        'A' => {
+            let snippet = git_show_text(hash, path)
+                .map(|t| first_line(&t))
+                .unwrap_or_default();
+            let mut c = serde_json::json!({
+                "node_id": node_id,
+                "action": "body_added",
+            });
+            if !snippet.is_empty() {
+                c["snippet"] = serde_json::json!(snippet);
+            }
+            changes.push(c);
+        }
+        'M' => {
+            let snippet = git_show_text(hash, path)
+                .map(|t| first_line(&t))
+                .unwrap_or_default();
+            let mut c = serde_json::json!({
+                "node_id": node_id,
+                "action": "body_edited",
+            });
+            if !snippet.is_empty() {
+                c["snippet"] = serde_json::json!(snippet);
+            }
+            changes.push(c);
+        }
+        'D' => {
+            changes.push(serde_json::json!({
+                "node_id": node_id,
+                "action": "body_removed",
+            }));
+        }
+        _ => {}
+    }
+}
+
+/// Diff a comments (.comments.json) file change.
+fn diff_comments(
+    changes: &mut Vec<serde_json::Value>,
+    hash: &str,
+    path: &str,
+    node_id: &str,
+    status: char,
+) {
+    let before: Vec<serde_json::Value> = if status == 'A' {
+        vec![]
+    } else {
+        git_show_json(&format!("{}^", hash), path)
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+    };
+
+    let after: Vec<serde_json::Value> = if status == 'D' {
+        vec![]
+    } else {
+        git_show_json(hash, path)
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+    };
+
+    // Index before comments by timestamp for diffing
+    let before_by_ts: std::collections::HashMap<&str, &serde_json::Value> = before.iter()
+        .filter_map(|c| c["timestamp"].as_str().map(|ts| (ts, c)))
+        .collect();
+    let after_by_ts: std::collections::HashMap<&str, &serde_json::Value> = after.iter()
+        .filter_map(|c| c["timestamp"].as_str().map(|ts| (ts, c)))
+        .collect();
+
+    // New comments (in after but not before)
+    for c in &after {
+        let ts = c["timestamp"].as_str().unwrap_or("");
+        if !before_by_ts.contains_key(ts) {
+            let mut change = serde_json::json!({
+                "node_id": node_id,
+                "action": "comment_added",
+            });
+            if let Some(author) = c["author"].as_str() {
+                change["author"] = serde_json::json!(author);
+            }
+            if let Some(tag) = c["tag"].as_str() {
+                change["tag"] = serde_json::json!(tag);
+            }
+            if let Some(body) = c["body"].as_str() {
+                change["snippet"] = serde_json::json!(first_line(body));
+            }
+            changes.push(change);
+        }
+    }
+
+    // Removed comments (in before but not after)
+    for c in &before {
+        let ts = c["timestamp"].as_str().unwrap_or("");
+        if !after_by_ts.contains_key(ts) {
+            changes.push(serde_json::json!({
+                "node_id": node_id,
+                "action": "comment_removed",
+                "timestamp": ts,
+            }));
+        }
+    }
+
+    // Edited comments (same timestamp, different body)
+    for c in &after {
+        let ts = c["timestamp"].as_str().unwrap_or("");
+        if let Some(prev) = before_by_ts.get(ts)
+            && c["body"] != prev["body"]
+        {
+            let mut change = serde_json::json!({
+                "node_id": node_id,
+                "action": "comment_edited",
+                "timestamp": ts,
+            });
+            if let Some(body) = c["body"].as_str() {
+                change["snippet"] = serde_json::json!(first_line(body));
+            }
+            changes.push(change);
+        }
+    }
+}
+
+/// First non-empty line, truncated.
+fn first_line(text: &str) -> String {
+    let line = text.lines()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("")
+        .trim();
+    if line.len() > 80 {
+        format!("{}...", &line[..77])
+    } else {
+        line.to_string()
+    }
 }
 
 /// Compare two node JSON values and return a map of changed fields.
