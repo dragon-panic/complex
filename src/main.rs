@@ -1854,23 +1854,23 @@ fn cmd_log(limit: usize, since: Option<String>, json: bool) -> Result<()> {
                     "archived" => println!("  x {}  archived", node_id),
                     "unarchived" => println!("  o {}  unarchived", node_id),
                     "body_added" | "body_edited" => {
-                        let snippet = c["snippet"].as_str().unwrap_or("");
-                        if snippet.is_empty() {
+                        let summary = c["body"].as_str().map(first_line).unwrap_or_default();
+                        if summary.is_empty() {
                             println!("  ~ {}  body", node_id);
                         } else {
-                            println!("  ~ {}  body: {}", node_id, snippet);
+                            println!("  ~ {}  body: {}", node_id, summary);
                         }
                     }
                     "body_removed" => println!("  - {}  body removed", node_id),
                     "comment_added" => {
                         let author = c["author"].as_str().unwrap_or("?");
                         let tag = c["tag"].as_str();
-                        let snippet = c["snippet"].as_str().unwrap_or("");
+                        let summary = c["body"].as_str().map(first_line).unwrap_or_default();
                         let tag_str = tag.map(|t| format!(" #{}", t)).unwrap_or_default();
-                        if snippet.is_empty() {
+                        if summary.is_empty() {
                             println!("  + {}  comment by {}{}", node_id, author, tag_str);
                         } else {
-                            println!("  + {}  comment by {}{}: {}", node_id, author, tag_str, snippet);
+                            println!("  + {}  comment by {}{}: {}", node_id, author, tag_str, summary);
                         }
                     }
                     "comment_removed" => {
@@ -1878,11 +1878,11 @@ fn cmd_log(limit: usize, since: Option<String>, json: bool) -> Result<()> {
                         println!("  - {}  comment {}", node_id, ts);
                     }
                     "comment_edited" => {
-                        let snippet = c["snippet"].as_str().unwrap_or("");
-                        if snippet.is_empty() {
+                        let summary = c["body"].as_str().map(first_line).unwrap_or_default();
+                        if summary.is_empty() {
                             println!("  ~ {}  comment edited", node_id);
                         } else {
-                            println!("  ~ {}  comment edited: {}", node_id, snippet);
+                            println!("  ~ {}  comment edited: {}", node_id, summary);
                         }
                     }
                     _ => {}
@@ -2032,29 +2032,17 @@ fn diff_body(
     status: char,
 ) {
     match status {
-        'A' => {
-            let snippet = git_show_text(hash, path)
-                .map(|t| first_line(&t))
-                .unwrap_or_default();
+        'A' | 'M' => {
+            let action = if status == 'A' { "body_added" } else { "body_edited" };
             let mut c = serde_json::json!({
                 "node_id": node_id,
-                "action": "body_added",
+                "action": action,
             });
-            if !snippet.is_empty() {
-                c["snippet"] = serde_json::json!(snippet);
-            }
-            changes.push(c);
-        }
-        'M' => {
-            let snippet = git_show_text(hash, path)
-                .map(|t| first_line(&t))
-                .unwrap_or_default();
-            let mut c = serde_json::json!({
-                "node_id": node_id,
-                "action": "body_edited",
-            });
-            if !snippet.is_empty() {
-                c["snippet"] = serde_json::json!(snippet);
+            if let Some(text) = git_show_text(hash, path) {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    c["body"] = serde_json::json!(trimmed);
+                }
             }
             changes.push(c);
         }
@@ -2115,7 +2103,7 @@ fn diff_comments(
                 change["tag"] = serde_json::json!(tag);
             }
             if let Some(body) = c["body"].as_str() {
-                change["snippet"] = serde_json::json!(first_line(body));
+                change["body"] = serde_json::json!(body);
             }
             changes.push(change);
         }
@@ -2145,7 +2133,7 @@ fn diff_comments(
                 "timestamp": ts,
             });
             if let Some(body) = c["body"].as_str() {
-                change["snippet"] = serde_json::json!(first_line(body));
+                change["body"] = serde_json::json!(body);
             }
             changes.push(change);
         }
