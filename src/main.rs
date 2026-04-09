@@ -1767,10 +1767,8 @@ fn cmd_list(state_filter: Option<String>, filed_by_filter: Option<String>, tag_f
 fn cmd_log(limit: usize, json: bool) -> Result<()> {
     let root = store::find_root()?;
 
-    // Find the .complex dir relative to the git working tree
-    let complex_dir = root.join(".complex");
-    let nodes_arg = complex_dir.join("nodes");
-    let issues_arg = complex_dir.join("issues");
+    let nodes_arg = root.join("nodes");
+    let issues_arg = root.join("issues");
 
     let output = std::process::Command::new("git")
         .args([
