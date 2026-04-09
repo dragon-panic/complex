@@ -108,9 +108,6 @@ Orchestrators and external tools use this for workflow hints, priorities, etc.
   nodes/                    ← one JSON file per live node (metadata + edges)
     a3F2.json
     bX7c.json
-  events/                   ← per-invocation event files
-    2026-04-02T17-20-02.jsonl
-  events.jsonl              ← legacy append-only audit log
   issues/                   ← markdown body per node
     a3F2.md
     bX7c.md
@@ -167,10 +164,10 @@ server, no port.
 | `cx comments <id>` | Read comment thread (`--tag` to filter) |
 | `cx parts` | Claimed nodes grouped by part |
 | `cx therapy` | Stale, shadowed, and stuck nodes |
-| `cx log` | Recent events (`--limit N`, default 20) |
+| `cx log` | Recent changes from git history (`--limit N`, default 20) |
 | `cx agent` | Print the agent guide |
 
-All mutation commands accept `--reason "..."` (stored in events log).
+All mutation commands accept `--reason "..."` (stored in node metadata).
 All commands support `--json` for machine-readable output.
 
 ## Environment

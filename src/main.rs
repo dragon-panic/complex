@@ -3,7 +3,7 @@ mod id;
 mod model;
 mod store;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use model::{EdgeType, State};
 
@@ -251,7 +251,7 @@ enum Commands {
     /// Print the agent guide (pipe to AGENT.md or include in system prompt)
     Agent,
 
-    /// Show recent events (audit log)
+    /// Show recent changes from git history
     Log {
         #[arg(long, default_value = "20")]
         limit: usize,
@@ -352,19 +352,6 @@ fn resolve_body(raw: &str) -> Result<String> {
     } else {
         Ok(raw.to_string())
     }
-}
-
-// ── event helper ─────────────────────────────────────────────────────────────
-
-fn emit(root: &std::path::Path, action: &str, node_id: &str, part: Option<&str>, detail: Option<&str>, reason: Option<&str>) {
-    let _ = store::append_event(root, store::Event {
-        ts: chrono::Utc::now().to_rfc3339(),
-        action,
-        node_id,
-        part,
-        detail,
-        reason,
-    });
 }
 
 /// Merge `{"_reason": reason}` into a node's existing meta (or create it).
@@ -491,8 +478,8 @@ by their ISO 8601 timestamp.
 ## Rationale (--reason)
 
 All mutation commands accept an optional `--reason` flag to record **why** you
-are taking an action. The reason is stored in `events.jsonl` (audit trail) and
-in the node's `meta._reason` field (quick lookup for orchestrators).
+are taking an action. The reason is stored in the node's `meta._reason` field
+(quick lookup for orchestrators) and preserved in git history via commit messages.
 
 ```
 cx claim <id> --as agent-1 --reason "has rust capability, no blockers"
@@ -602,8 +589,6 @@ fn cmd_add(title: String, body: Option<String>, body_file: Option<String>, by: O
         store::write_body(&root, &new_id, &content)?;
     }
 
-    emit(&root, "create", &new_id, None, Some(&title), None);
-
     if json {
         println!("{}", serde_json::json!({ "id": new_id, "title": title }));
     } else {
@@ -637,8 +622,6 @@ fn cmd_new(parent_partial: String, title: String, body: Option<String>, body_fil
         let content = resolve_body(raw)?;
         store::write_body(&root, &new_id, &content)?;
     }
-
-    emit(&root, "create", &new_id, None, Some(&title), None);
 
     if json {
         println!(
@@ -678,9 +661,6 @@ fn cmd_surface(ids: Vec<String>, reason: Option<String>, all: bool, json: bool) 
             }
         }
         store::save(&root, &graph)?;
-        for id in &eligible {
-            emit(&root, "surface", id, None, None, reason.as_deref());
-        }
         if json {
             let out: Vec<_> = eligible.iter().map(|id| serde_json::json!({ "id": id, "state": "ready" })).collect();
             println!("{}", serde_json::to_string_pretty(&out)?);
@@ -729,7 +709,6 @@ fn cmd_surface(ids: Vec<String>, reason: Option<String>, all: bool, json: bool) 
             if let Some(r) = &reason {
                 set_reason(node, r);
             }
-            emit(&root, "surface", &resolved, None, None, reason.as_deref());
             results.push(resolved);
         }
 
@@ -794,7 +773,6 @@ fn cmd_claim(partial: String, as_part: Option<String>, reason: Option<String>, j
         set_reason(node, r);
     }
     store::save(&root, &graph)?;
-    emit(&root, "claim", &resolved, Some(&part), None, reason.as_deref());
 
     if json {
         println!("{}", serde_json::json!({ "id": resolved, "state": "claimed", "part": part }));
@@ -824,7 +802,6 @@ fn cmd_unclaim(partial: String, reason: Option<String>, json: bool) -> Result<()
         set_reason(node, r);
     }
     store::save(&root, &graph)?;
-    emit(&root, "unclaim", &resolved, None, None, reason.as_deref());
 
     if json {
         println!("{}", serde_json::json!({ "id": resolved, "state": "ready" }));
@@ -901,17 +878,6 @@ fn cmd_integrate(partial: String, reason: Option<String>, json: bool) -> Result<
     }
 
     store::save(&root, &graph)?;
-    emit(&root, "integrate", &resolved, None, None, reason.as_deref());
-    for y_id in &auto_surface {
-        emit(
-            &root,
-            "surface",
-            y_id,
-            None,
-            None,
-            Some("auto-surfaced: last blocker integrated"),
-        );
-    }
 
     if json {
         let mut out = serde_json::json!({ "id": resolved, "state": "integrated" });
@@ -978,9 +944,6 @@ fn cmd_archive(ids: Option<String>, json: bool) -> Result<()> {
     }
 
     store::save(&root, &graph)?;
-    for node_id in &archived {
-        emit(&root, "archive", node_id, None, None, None);
-    }
 
     if json {
         println!("{}", serde_json::json!({"archived": archived}));
@@ -994,7 +957,7 @@ fn cmd_archive(ids: Option<String>, json: bool) -> Result<()> {
 
 // ── unarchive ────────────────────────────────────────────────────────────────
 
-fn cmd_unarchive(partial: String, reason: Option<String>, json: bool) -> Result<()> {
+fn cmd_unarchive(partial: String, _reason: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let mut graph = store::load(&root)?;
 
@@ -1012,7 +975,6 @@ fn cmd_unarchive(partial: String, reason: Option<String>, json: bool) -> Result<
         .unwrap_or_default();
 
     store::save(&root, &graph)?;
-    emit(&root, "unarchive", &partial, None, Some(&title), reason.as_deref());
 
     if json {
         println!("{}", serde_json::json!({ "id": partial, "title": title }));
@@ -1063,7 +1025,6 @@ fn cmd_shadow(id: Option<String>, reason: Option<String>, json: bool) -> Result<
                 set_reason(node, r);
             }
             store::save(&root, &graph)?;
-            emit(&root, "shadow", &resolved, None, None, reason.as_deref());
 
             if json {
                 println!("{}", serde_json::json!({ "id": resolved, "shadowed": true }));
@@ -1089,7 +1050,6 @@ fn cmd_unshadow(partial: String, reason: Option<String>, json: bool) -> Result<(
         set_reason(node, r);
     }
     store::save(&root, &graph)?;
-    emit(&root, "unshadow", &resolved, None, None, reason.as_deref());
 
     if json {
         println!("{}", serde_json::json!({ "id": resolved, "shadowed": false }));
@@ -1390,7 +1350,7 @@ fn cmd_therapy(json: bool) -> Result<()> {
 
 // ── move ──────────────────────────────────────────────────────────────────────
 
-fn cmd_move(partial: String, new_parent: Option<String>, to_root: bool, reason: Option<String>, json: bool) -> Result<()> {
+fn cmd_move(partial: String, new_parent: Option<String>, to_root: bool, _reason: Option<String>, json: bool) -> Result<()> {
     if new_parent.is_none() && !to_root {
         bail!("provide a new parent ID, or use --root to promote to root level");
     }
@@ -1427,8 +1387,6 @@ fn cmd_move(partial: String, new_parent: Option<String>, to_root: bool, reason: 
     node.touch();
 
     store::save(&root, &graph)?;
-    emit(&root, "move", &resolved, None,
-         old_parent.as_deref().or(Some("root")), reason.as_deref());
 
     if json {
         println!("{}", serde_json::json!({
@@ -1444,7 +1402,7 @@ fn cmd_move(partial: String, new_parent: Option<String>, to_root: bool, reason: 
     Ok(())
 }
 
-fn cmd_rm(partial: String, reason: Option<String>, json: bool) -> Result<()> {
+fn cmd_rm(partial: String, _reason: Option<String>, json: bool) -> Result<()> {
     let root = store::find_root()?;
     let mut graph = store::load(&root)?;
     let resolved = id::resolve(&graph, &partial)?;
@@ -1477,8 +1435,6 @@ fn cmd_rm(partial: String, reason: Option<String>, json: bool) -> Result<()> {
     store::scrub_archived_edges(&root, &resolved)?;
     store::save(&root, &graph)?;
 
-    emit(&root, "rm", &resolved, None, Some(&title), reason.as_deref());
-
     if json {
         println!("{}", serde_json::json!({ "id": resolved, "removed": true }));
     } else {
@@ -1501,7 +1457,6 @@ fn cmd_rename(partial: String, title: String, json: bool) -> Result<()> {
     node.title = title.clone();
     node.touch();
     store::save(&root, &graph)?;
-    emit(&root, "rename", &resolved, None, Some(&title), None);
 
     if json {
         println!("{}", serde_json::json!({ "id": resolved, "title": title }));
@@ -1543,7 +1498,6 @@ fn cmd_edit(partial: String, body: Option<String>, file: Option<String>, force_e
 
     if updated != existing {
         store::write_body(&root, &resolved, &updated)?;
-        emit(&root, "edit", &resolved, None, None, None);
         println!("saved  {}", resolved);
     } else {
         println!("no changes");
@@ -1633,7 +1587,6 @@ fn cmd_tag(partial: String, tag: String, json: bool) -> Result<()> {
         node.touch();
     }
     store::save(&root, &graph)?;
-    emit(&root, "tag", &resolved, None, Some(&tag), None);
 
     if json {
         println!("{}", serde_json::json!({ "id": resolved, "tag": tag }));
@@ -1657,7 +1610,6 @@ fn cmd_untag(partial: String, tag: String, json: bool) -> Result<()> {
         node.touch();
     }
     store::save(&root, &graph)?;
-    emit(&root, "untag", &resolved, None, Some(&tag), None);
 
     if json {
         println!("{}", serde_json::json!({ "id": resolved, "tag": tag }));
@@ -1814,32 +1766,61 @@ fn cmd_list(state_filter: Option<String>, filed_by_filter: Option<String>, tag_f
 
 fn cmd_log(limit: usize, json: bool) -> Result<()> {
     let root = store::find_root()?;
-    let events = store::recent_events(&root, limit)?;
+
+    // Find the .complex dir relative to the git working tree
+    let complex_dir = root.join(".complex");
+    let nodes_arg = complex_dir.join("nodes");
+    let issues_arg = complex_dir.join("issues");
+
+    let output = std::process::Command::new("git")
+        .args([
+            "log",
+            "--pretty=format:%H%x00%aI%x00%s",
+            &format!("-{}", limit),
+            "--",
+        ])
+        .arg(&nodes_arg)
+        .arg(&issues_arg)
+        .output()
+        .context("failed to run git log — is this a git repository?")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("git log failed: {}", stderr.trim());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let entries: Vec<(&str, &str, &str)> = stdout
+        .lines()
+        .filter(|l| !l.is_empty())
+        .filter_map(|line| {
+            let mut parts = line.splitn(3, '\0');
+            let hash = parts.next()?;
+            let date = parts.next()?;
+            let subject = parts.next()?;
+            Some((hash, date, subject))
+        })
+        .collect();
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&events)?);
-    } else if events.is_empty() {
-        println!("no events");
+        let out: Vec<serde_json::Value> = entries
+            .iter()
+            .map(|(hash, date, subject)| {
+                serde_json::json!({
+                    "hash": hash,
+                    "date": date,
+                    "subject": subject,
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&out)?);
+    } else if entries.is_empty() {
+        println!("no commits touching .complex/");
     } else {
-        for e in &events {
-            let ts = e["ts"].as_str().unwrap_or("?");
-            let action = e["action"].as_str().unwrap_or("?");
-            let node_id = e["node_id"].as_str().unwrap_or("?");
-            let part = e["part"].as_str().unwrap_or("");
-            let detail = e["detail"].as_str().unwrap_or("");
-            let reason = e["reason"].as_str().unwrap_or("");
-            let mut extra = match (part, detail) {
-                ("", "") => String::new(),
-                (p, "") => format!("  {}", p),
-                ("", d) => format!("  {}", d),
-                (p, d) => format!("  {}  {}", p, d),
-            };
-            if !reason.is_empty() {
-                extra.push_str(&format!("  ({})", reason));
-            }
-            // Show only date+time, not full RFC3339
-            let ts_short = &ts[..19].replace('T', " ");
-            println!("{}  {:<12}  {}{}", ts_short, action, node_id, extra);
+        for (hash, date, subject) in &entries {
+            let short = &hash[..7.min(hash.len())];
+            let ts = &date[..19.min(date.len())].replace('T', " ");
+            println!("{}  {}  {}", ts, short, subject);
         }
     }
     Ok(())
@@ -1981,7 +1962,6 @@ fn cmd_comment(
         }
         node.touch();
         store::save(&root, &graph)?;
-        emit(&root, "comment-rm", &resolved, None, Some(&ts_str), None);
         if json {
             println!("{}", serde_json::json!({ "id": resolved, "removed": ts_str }));
         } else {
@@ -2018,7 +1998,6 @@ fn cmd_comment(
         }
         node.touch();
         store::save(&root, &graph)?;
-        emit(&root, "comment-edit", &resolved, None, Some(&ts_str), None);
         if json {
             println!("{}", serde_json::json!({ "id": resolved, "edited": ts_str }));
         } else {
@@ -2039,7 +2018,6 @@ fn cmd_comment(
     node.comments.push(comment);
     node.touch();
     store::save(&root, &graph)?;
-    emit(&root, "comment", &resolved, Some(&author), tag.as_deref(), None);
 
     if json {
         println!("{}", serde_json::json!({

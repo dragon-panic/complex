@@ -1,0 +1,12 @@
+{
+  "id": "zRe9",
+  "title": "Remove legacy events.jsonl — use per-invocation event files only",
+  "state": "integrated",
+  "shadowed": false,
+  "part": "claude",
+  "created_at": "2026-04-02T23:40:20.177342819Z",
+  "updated_at": "2026-04-02T23:41:59.479848572Z",
+  "meta": {
+    "_reason": "events.jsonl removed — tests pass, clippy clean"
+  }
+}

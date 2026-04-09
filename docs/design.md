@@ -65,11 +65,11 @@ writes mutations back to disk.
 
 No daemon, no persistent process, no port.
 
-### Events log
+### Change history
 
-Each `cx` invocation writes events to `events/{timestamp}.jsonl`. An
-orchestrator can process event files to react to state changes without
-polling. A legacy `events.jsonl` may also exist and is read on load.
+`cx log` reads from `git log` — committed changes to `.complex/` are the
+event stream. No separate event files; forces all changes to be committed
+to be visible.
 
 ### Archive
 

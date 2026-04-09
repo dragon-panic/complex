@@ -1,5 +1,4 @@
-use std::fs::{self, File, OpenOptions};
-use std::io::Write as IoWrite;
+use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -12,8 +11,6 @@ const GRAPH_FILE: &str = "graph.json";
 const NODES_DIR: &str = "nodes";
 const ISSUES_DIR: &str = "issues";
 const ARCHIVE_DIR: &str = "archive";
-const EVENTS_JSONL: &str = "events.jsonl";
-const EVENTS_DIR: &str = "events";
 
 
 // ── project location ──────────────────────────────────────────────────────────
@@ -49,7 +46,6 @@ pub fn init(cwd: &Path) -> Result<PathBuf> {
     fs::create_dir_all(root.join(NODES_DIR))?;
     fs::create_dir_all(root.join(ISSUES_DIR))?;
     fs::create_dir_all(root.join(ARCHIVE_DIR))?;
-    fs::create_dir_all(root.join(EVENTS_DIR))?;
     Ok(root)
 }
 
@@ -541,81 +537,6 @@ fn remove_from_archive_jsonl(archive_dir: &Path, id: &str) -> Result<Option<Node
     Ok(None)
 }
 
-// ── events ────────────────────────────────────────────────────────────────────
-
-#[derive(serde::Serialize)]
-pub struct Event<'a> {
-    pub ts: String,
-    pub action: &'a str,
-    pub node_id: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub part: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub detail: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<&'a str>,
-}
-
-pub fn append_event(root: &Path, event: Event<'_>) -> Result<()> {
-    let events_dir = root.join(EVENTS_DIR);
-    fs::create_dir_all(&events_dir)?;
-
-    // Also append to legacy events.jsonl for backward compat during transition
-    let legacy_path = root.join(EVENTS_JSONL);
-    let line = serde_json::to_string(&event)?;
-    append_line(&legacy_path, &line)?;
-
-    // Write to per-invocation file: events/{timestamp}.jsonl
-    // Use the event timestamp (YYYY-MM-DDTHH:MM:SS) as the filename base
-    let ts_safe = event.ts.replace(':', "-");
-    let filename = format!("{}.jsonl", ts_safe);
-    let event_path = events_dir.join(&filename);
-    append_line(&event_path, &line)?;
-
-    Ok(())
-}
-
-/// Read the most recent N events from all event sources.
-pub fn recent_events(root: &Path, limit: usize) -> Result<Vec<serde_json::Value>> {
-    let mut all: Vec<serde_json::Value> = Vec::new();
-
-    // Read from legacy events.jsonl
-    let legacy = root.join(EVENTS_JSONL);
-    if legacy.exists() {
-        let raw = fs::read_to_string(&legacy)?;
-        for line in raw.lines().filter(|l| !l.trim().is_empty()) {
-            if let Ok(v) = serde_json::from_str(line) {
-                all.push(v);
-            }
-        }
-    }
-
-    // Read from events/*.jsonl files
-    let events_dir = root.join(EVENTS_DIR);
-    if events_dir.exists() {
-        let mut files: Vec<_> = fs::read_dir(&events_dir)?
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
-            .map(|e| e.path())
-            .collect();
-        files.sort();
-        for path in files {
-            let raw = fs::read_to_string(&path)?;
-            for line in raw.lines().filter(|l| !l.trim().is_empty()) {
-                if let Ok(v) = serde_json::from_str(line) {
-                    all.push(v);
-                }
-            }
-        }
-    }
-
-    // Deduplicate by (ts, action, node_id) and take most recent N
-    all.dedup_by(|a, b| {
-        a["ts"] == b["ts"] && a["action"] == b["action"] && a["node_id"] == b["node_id"]
-    });
-    let skip = all.len().saturating_sub(limit);
-    Ok(all.into_iter().skip(skip).collect())
-}
 
 
 /// Collect all IDs from archived nodes.
@@ -679,8 +600,3 @@ pub fn find_orphan_bodies(root: &Path, graph: &Graph) -> Result<Vec<String>> {
     Ok(orphans)
 }
 
-fn append_line(path: &Path, line: &str) -> Result<()> {
-    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
-    writeln!(file, "{}", line)?;
-    Ok(())
-}

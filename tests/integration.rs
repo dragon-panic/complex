@@ -53,6 +53,7 @@ fn archive(dir: &TempDir, id: &str) {
     cx(dir).args(["archive", "--ids", id]).assert().success();
 }
 
+
 /// Reconstruct a graph-json-like structure from per-node files.
 /// Filters dormant edges (where target is not a live node), matching runtime behavior.
 fn graph_json(dir: &TempDir) -> serde_json::Value {
@@ -1082,7 +1083,6 @@ fn ambiguous_short_id_fails() {
     let root = dir.path().join(".complex");
     std::fs::create_dir_all(root.join("issues")).unwrap();
     std::fs::create_dir_all(root.join("archive")).unwrap();
-    std::fs::create_dir_all(root.join("events")).unwrap();
 
     let g = serde_json::json!({
         "version": 1,
@@ -1365,44 +1365,7 @@ fn edit_body_and_file_conflict() {
         .assert().failure();
 }
 
-#[test]
-fn edit_emits_event() {
-    let dir = TempDir::new().unwrap();
-    init(&dir);
-    let id = add(&dir, "Evented edit");
-
-    cx(&dir).args(["edit", &id, "--body", "New body"])
-        .assert().success().stdout(contains("saved"));
-
-    let events_raw = std::fs::read_to_string(dir.path().join(".complex/events.jsonl")).unwrap();
-    let edit_event: serde_json::Value = events_raw
-        .lines()
-        .filter_map(|l| serde_json::from_str(l).ok())
-        .find(|e: &serde_json::Value| e["action"] == "edit")
-        .expect("expected an 'edit' event in events.jsonl");
-    assert_eq!(edit_event["node_id"], id);
-}
-
 // ── cx --reason flag ──────────────────────────────────────────────────────────
-
-#[test]
-fn reason_on_claim_persists_in_events() {
-    let dir = TempDir::new().unwrap();
-    init(&dir);
-    let id = add(&dir, "Task");
-    surface_id(&dir, &id);
-    cx(&dir).args(["claim", &id, "--as", "agent-1", "--reason", "has rust capability"])
-        .assert().success();
-
-    // Check events.jsonl
-    let events_raw = std::fs::read_to_string(dir.path().join(".complex/events.jsonl")).unwrap();
-    let claim_event: serde_json::Value = events_raw
-        .lines()
-        .filter_map(|l| serde_json::from_str(l).ok())
-        .find(|e: &serde_json::Value| e["action"] == "claim")
-        .unwrap();
-    assert_eq!(claim_event["reason"], "has rust capability");
-}
 
 #[test]
 fn reason_on_claim_writes_meta() {
@@ -1510,18 +1473,6 @@ fn reason_preserves_existing_meta() {
     assert_eq!(meta["capability"], "rust");
     assert_eq!(meta["priority"], 1);
     assert_eq!(meta["_reason"], "blocked");
-}
-
-#[test]
-fn log_shows_reason() {
-    let dir = TempDir::new().unwrap();
-    init(&dir);
-    let id = add(&dir, "Task");
-    cx(&dir).args(["shadow", &id, "--reason", "needs review"])
-        .assert().success();
-
-    cx(&dir).args(["log"]).assert().success()
-        .stdout(contains("(needs review)"));
 }
 
 #[test]
@@ -1978,7 +1929,6 @@ fn old_graph_without_filed_by_loads_fine() {
     let root = dir.path().join(".complex");
     std::fs::create_dir_all(root.join("issues")).unwrap();
     std::fs::create_dir_all(root.join("archive")).unwrap();
-    std::fs::create_dir_all(root.join("events")).unwrap();
 
     // Write a legacy graph.json WITHOUT nodes/ dir
     let graph = r#"{"version":1,"nodes":[{"id":"test","title":"Old node","state":"latent","shadowed":false,"part":null,"created_at":"2026-01-01T00:00:00+00:00","updated_at":"2026-01-01T00:00:00+00:00"}],"edges":[]}"#;
@@ -2564,7 +2514,6 @@ fn tag_serde_compat_no_tags_field() {
     let root = dir.path().join(".complex");
     std::fs::create_dir_all(root.join("issues")).unwrap();
     std::fs::create_dir_all(root.join("archive")).unwrap();
-    std::fs::create_dir_all(root.join("events")).unwrap();
 
     // Write a legacy graph.json WITHOUT nodes/ dir
     let graph = r#"{
@@ -2854,47 +2803,6 @@ fn comment_rm_nonexistent_timestamp_fails() {
         .stderr(contains("no comment with timestamp"));
 }
 
-#[test]
-fn comment_events_logged() {
-    let dir = TempDir::new().unwrap();
-    init(&dir);
-    let id = add(&dir, "event log test");
-
-    // Append
-    let out = cx(&dir)
-        .args(["--json", "comment", &id, "--as", "alice", "note"])
-        .output()
-        .unwrap();
-    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    let ts = v["timestamp"].as_str().unwrap().to_string();
-
-    // Edit
-    cx(&dir)
-        .args(["comment", &id, "--edit", &ts, "updated"])
-        .assert()
-        .success();
-
-    // Remove
-    cx(&dir)
-        .args(["comment", &id, "--rm", &ts])
-        .assert()
-        .success();
-
-    // Check events
-    let out = cx(&dir)
-        .args(["--json", "log", "--limit", "10"])
-        .output()
-        .unwrap();
-    let events: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
-    let actions: Vec<&str> = events
-        .iter()
-        .filter_map(|e| e["action"].as_str())
-        .collect();
-    assert!(actions.contains(&"comment"));
-    assert!(actions.contains(&"comment-edit"));
-    assert!(actions.contains(&"comment-rm"));
-}
-
 // ── archive edge preservation + unarchive ────────────────────────────────────
 
 /// Scenario 1: Archive one node, unarchive it — edges round-trip cleanly.
@@ -3181,23 +3089,3 @@ fn unarchive_missing_id_fails() {
     cx(&dir).args(["unarchive", "ZZZZ"]).assert().failure();
 }
 
-/// Unarchive emits an event.
-#[test]
-fn unarchive_emits_event() {
-    let dir = TempDir::new().unwrap();
-    init(&dir);
-    let a = add(&dir, "A");
-    surface_id(&dir, &a);
-    claim(&dir, &a, "t");
-    integrate(&dir, &a);
-    archive(&dir, &a);
-    unarchive(&dir, &a);
-
-    let out = cx(&dir)
-        .args(["--json", "log", "--limit", "10"])
-        .output()
-        .unwrap();
-    let events: Vec<serde_json::Value> = serde_json::from_slice(&out.stdout).unwrap();
-    let actions: Vec<&str> = events.iter().filter_map(|e| e["action"].as_str()).collect();
-    assert!(actions.contains(&"unarchive"));
-}
