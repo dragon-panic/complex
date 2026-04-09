@@ -69,7 +69,14 @@ pub fn cmd_log(limit: usize, since: Option<String>, json: bool) -> Result<()> {
                     "created" => {
                         let title = c["title"].as_str().unwrap_or("");
                         let state = c["state"].as_str().unwrap_or("latent");
-                        println!("  + {}  {}  [{}]", node_id, title, state);
+                        let tags_str = c["tags"].as_array()
+                            .filter(|t| !t.is_empty())
+                            .map(|t| format!("  #{}", t.iter()
+                                .filter_map(|v| v.as_str())
+                                .collect::<Vec<_>>()
+                                .join(" #")))
+                            .unwrap_or_default();
+                        println!("  + {}  {}  [{}]{}", node_id, title, state, tags_str);
                     }
                     "removed" => {
                         println!("  - {}", node_id);
@@ -197,12 +204,16 @@ fn diff_node_file(
     match status {
         'A' => {
             if let Some(node) = git_show_json(hash, path) {
-                changes.push(serde_json::json!({
+                let mut c = serde_json::json!({
                     "node_id": node_id,
                     "action": "created",
                     "title": node["title"].as_str().unwrap_or(""),
                     "state": node["state"].as_str().unwrap_or("latent"),
-                }));
+                });
+                if let Some(tags) = node["tags"].as_array().filter(|t| !t.is_empty()) {
+                    c["tags"] = serde_json::json!(tags);
+                }
+                changes.push(c);
             } else {
                 changes.push(serde_json::json!({
                     "node_id": node_id,
