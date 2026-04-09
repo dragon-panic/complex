@@ -233,11 +233,15 @@ fn diff_node_file(
             if let (Some(before), Some(after)) = (before, after) {
                 let fields = diff_node_fields(&before, &after);
                 if !fields.is_null() {
-                    changes.push(serde_json::json!({
+                    let mut c = serde_json::json!({
                         "node_id": node_id,
                         "action": "modified",
                         "fields": fields,
-                    }));
+                    });
+                    if let Some(tags) = after["tags"].as_array().filter(|t| !t.is_empty()) {
+                        c["tags"] = serde_json::json!(tags);
+                    }
+                    changes.push(c);
                 }
             }
         }
